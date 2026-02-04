@@ -1,0 +1,4 @@
+cd existing_repo
+git remote add origin https://gitlab.chabokan.net/MostafaMono/dokancheh.git
+git branch -M main
+git push -uf origin main
