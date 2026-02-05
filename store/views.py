@@ -112,23 +112,33 @@ class OrdersGenericApiView(GenericAPIView):
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(serializer.data, status=status.HTTP_201_CREATED)
-    
-class OrdersGenericDetailView(RetrieveUpdateDestroyAPIView):
-    queryset = Order.objects.all()
+
+
+from rest_framework import status
+
+class OrdersGenericDetailView(GenericAPIView):
     serializer_class = OrderSerializer
-    pagination_class = CustomLimitOffsetPagination()
-    permission_classes = [IsAuthenticated]
+    queryset = Order.objects.all()
     authentication_classes = [JWTAuthentication]
-    def delete(self, request, *args, **kwargs):
-        order = self.get_object()
+    permission_classes = [IsAuthenticated]
 
-        if order.status != Order.Status.PENDING:
-            return Response(
-                {"detail": "Only pending orders can be deleted."},
-                status=400
-            )
+    def get(self, request, *args, **kwargs):
+        orders = self.get_queryset()
+        serializer = self.get_serializer(orders, many=True)
+        return Response(serializer.data)
 
-        return super().delete(request, *args, **kwargs)
+    def post(self, request, *args, **kwargs):
+        items_data = request.data.get("items", [])
+        serializer = self.get_serializer(
+            data=request.data,
+            context={"request": request, "items_data": items_data}
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
+
 
 class OrderItemsGenericApiView(ListCreateAPIView):
     queryset = OrderItem.objects.all()

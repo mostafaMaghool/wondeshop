@@ -134,22 +134,31 @@ class OrderSerializer(serializers.ModelSerializer):
         # 🔥 تولید کد پیگیری امن
         validated_data["follow_up_code"] = random.randint(1000000000, 9999999999)
 
-        items_data = self.context.get("items_data", [])
+        validated_data['user'] = self.context['request'].user
+
         order = Order.objects.create(**validated_data)
 
         total = 0
+        items_data = self.context.get("items_data", [])
         for item_dict in items_data:
-            product_id = item_dict["product"]
+            product_id = item_dict.get("product")
+            quantity = item_dict.get("quantity", 1)
 
-            product = Product.objects.get(id=product_id)
+            if not product_id:
+                raise serializers.ValidationError("Product ID is required for each order item.")
+
+            try:
+                product = Product.objects.get(id=product_id)
+            except Product.DoesNotExist:
+                raise serializers.ValidationError(f"Product with id {product_id} does not exist.")
 
             OrderItem.objects.create(
                 order=order,
                 product=product,
-                quantity=item_dict["quantity"]
-            )
+                quantity=quantity
+        )
 
-            total += product.price * item_dict["quantity"]
+            total += product.price * quantity
 
 
         order.total_amount = total
@@ -172,16 +181,20 @@ class OrderSerializer(serializers.ModelSerializer):
             "items",
         ]
         read_only_fields = [
-            "id", "created_at", "updated_at",
-            "total_amount", "items", "follow_up_code"
+            "id",
+            "created_at",
+            "updated_at",
+            "total_amount",
+            "items",
+            "follow_up_code",
+            "user",  # ← اضافه کنید
         ]
 
+
     def get_items(self, obj):
-        # از related_name مدل OrderItem استفاده می‌کنیم
-        # فرض کنیم در مدل OrderItem:
-        # order = models.ForeignKey(Order, related_name="items", ...)
-        order_items = obj.items.all()
+        order_items = obj.orderitem_set.all()
         return OrderItemSerializer(order_items, many=True).data
+
 
 
 class LogoutSerializer(serializers.Serializer):
