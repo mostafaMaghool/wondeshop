@@ -73,8 +73,8 @@ class CategoryViewSet(ModelViewSet):
 class CustomLimitOffsetPagination(LimitOffsetPagination):
     default_limit = 10
     max_limit = 120
-    limit_query_param = 'size'      # به جای ?limit=...
-    offset_query_param = 'page'     # به جای ?offset=...
+    limit_query_param = 'size'
+    offset_query_param = 'page'
     default_offset = 0
 
 
@@ -98,6 +98,9 @@ class OrdersGenericApiView(GenericAPIView):
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
 
+    def get_queryset(self):
+        return Order.objects.filter(user=self.request.user)
+
     def get(self, request, *args, **kwargs):
         orders = self.get_queryset()
         serializer = self.get_serializer(orders, many=True)
@@ -110,8 +113,9 @@ class OrdersGenericApiView(GenericAPIView):
             context={"request": request, "items_data": items_data}
         )
         serializer.is_valid(raise_exception=True)
-        serializer.save()
+        order = serializer.save()
         return Response(serializer.data, status=status.HTTP_201_CREATED)
+
 
 
 from rest_framework import status

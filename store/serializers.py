@@ -128,74 +128,77 @@ class OrderItemSerializer(ModelSerializer):
     #     return value
 import random
 
+
 class OrderSerializer(serializers.ModelSerializer):
+    items = OrderItemSerializer(many=True, write_only=True, required=False)
+
+    class Meta:
+        model = Order
+        fields = [
+            "id",
+            "user",
+            "status",
+            "total_amount",
+            "created_at",
+            "updated_at",
+            "shipment_time",
+            "follow_up_code",
+            "items",
+        ]
+        read_only_fields = [
+            "id",
+            "user",
+            "total_amount",
+            "created_at",
+            "updated_at",
+            "follow_up_code",
+        ]
 
     def create(self, validated_data):
-        # 🔥 تولید کد پیگیری امن
-        validated_data["follow_up_code"] = random.randint(1000000000, 9999999999)
+        items_data = validated_data.pop('items', [])
+        user = self.context['request'].user
 
-        validated_data['user'] = self.context['request'].user
+        # تولید کد پیگیری
+        follow_up_code = random.randint(1000000000, 9999999999)
 
-        order = Order.objects.create(**validated_data)
+        order = Order.objects.create(
+            user=user,
+            follow_up_code=follow_up_code,
+            **validated_data
+        )
 
         total = 0
-        items_data = self.context.get("items_data", [])
-        for item_dict in items_data:
-            product_id = item_dict.get("product")
-            quantity = item_dict.get("quantity", 1)
+        for item_data in items_data:
+            product = item_data.get('product')
+            quantity = item_data.get('quantity')
 
-            if not product_id:
-                raise serializers.ValidationError("Product ID is required for each order item.")
+            if not product:
+                raise serializers.ValidationError("فیلد product در آیتم‌ها الزامی است")
+            if not isinstance(quantity, int) or quantity < 1:
+                raise serializers.ValidationError("quantity باید عدد صحیح مثبت باشد")
 
-            try:
-                product = Product.objects.get(id=product_id)
-            except Product.DoesNotExist:
-                raise serializers.ValidationError(f"Product with id {product_id} does not exist.")
+            if product.stock < quantity:
+                raise serializers.ValidationError(f"موجودی محصول {product.name} کافی نیست")
 
             OrderItem.objects.create(
                 order=order,
                 product=product,
                 quantity=quantity
-        )
+            )
 
             total += product.price * quantity
 
-
         order.total_amount = total
-        order.save()
+        order.save(update_fields=['total_amount'])
+
         return order
-    items = OrderItemSerializer(source="orderitem_set", many=True, read_only=True)
-    total_amount = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
-    created_at = serializers.DateTimeField(read_only=True)
-    updated_at = serializers.DateTimeField(read_only=True)
 
-    class Meta:
-        model = Order
-        fields = [
-            "user",
-            "created_at",
-            "updated_at",
-            "status",
-            "total_amount",
-            "shipment_time",
-            "items",
-        ]
-        read_only_fields = [
-            "id",
-            "created_at",
-            "updated_at",
-            "total_amount",
-            "items",
-            "follow_up_code",
-            "user",  # ← اضافه کنید
-        ]
-
-
-    def get_items(self, obj):
-        order_items = obj.orderitem_set.all()
-        return OrderItemSerializer(order_items, many=True).data
-
-
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        representation['items'] = OrderItemSerializer(
+            instance.orderitem_set.all(), many=True
+        ).data
+        return representation
 
 class LogoutSerializer(serializers.Serializer):
     refresh = serializers.CharField()

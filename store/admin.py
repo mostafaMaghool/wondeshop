@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Product, ProductImage, Category, ProductAttribute
+from .models import *
 
 
 class ProductAttributeInline(admin.TabularInline):
@@ -27,3 +27,30 @@ class CategoryAdmin(admin.ModelAdmin):
 @admin.register(ProductAttribute)
 class ProductAttributeAdmin(admin.ModelAdmin):
     list_display = ('id', 'product', 'name', 'value')
+
+@admin.register(Order)
+class OrderAdmin(admin.ModelAdmin):
+    list_display = ('id', 'user', 'status', 'total_amount', 'created_at', 'follow_up_code')
+    list_filter = ('status', 'created_at')
+    search_fields = ('user__username', 'follow_up_code')
+    date_hierarchy = 'created_at'
+    ordering = ('-created_at',)
+
+
+class OrderItemInline(admin.TabularInline):
+    model = OrderItem
+    extra = 0
+    fields = ('product', 'quantity', 'item_subtotal')
+    readonly_fields = ('item_subtotal',)
+
+
+@admin.register(OrderItem)
+class OrderItemAdmin(admin.ModelAdmin):
+    list_display = ('id', 'order', 'product', 'quantity', 'item_subtotal')
+    list_filter = ('order__status',)
+    search_fields = ('product__name', 'order__follow_up_code')
+    readonly_fields = ('item_subtotal',)
+
+
+# اگر می‌خوای داخل صفحه Order بتونی آیتم‌هاش رو مستقیم ویرایش کنی:
+OrderAdmin.inlines = [OrderItemInline]

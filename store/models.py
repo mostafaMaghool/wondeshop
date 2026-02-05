@@ -146,10 +146,17 @@ class Order(models.Model):
     class Meta:
         ordering = ['-created_at']
         verbose_name='order'
-
     def __str__(self):
-        return f'Order #{self.pk} - {self.user}'
-    
+            # گزینه ۱ - ساده و استاندارد
+            return f"سفارش #{self.id} - {self.user}"
+
+    # گزینه ۲ - بهتر و کاربردی‌تر (توصیه می‌شود)
+    def __str__(self):
+        return f"سفارش #{self.follow_up_code} - {self.user.username if self.user else 'بدون کاربر'}"
+
+    # گزینه ۳ - خیلی خوانا برای فارسی
+    def __str__(self):
+        return f"سفارش {self.follow_up_code} – کاربر: {self.user.get_full_name() or self.user.username}"   
 class ProductPriceHistory(models.Model):
     product = models.ForeignKey(
         Product,
