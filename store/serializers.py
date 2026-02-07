@@ -9,6 +9,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
 from rest_framework.relations import PrimaryKeyRelatedField
 from store.models import *
+from user.api.admin_user_serializer import MediaSerializer
 
 # ======================================================
 # region Sara (Products / Categories / Payments)
@@ -19,9 +20,10 @@ class ProductImageSerializer(serializers.ModelSerializer):
         fields = ['id', 'image', 'is_main']
 
 class ProductSerializer(serializers.ModelSerializer):
+    media = MediaSerializer(many=True, read_only=True)
     class Meta:
         model = Product
-        fields = ('name', 'description', 'price', 'image_url', 'stock', 'category','is_active')
+        fields = '__all__'
         read_only_fields = ['id']
         def validate_price(self, value):
             if value <= 0:

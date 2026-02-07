@@ -1,109 +1,112 @@
-from rest_framework.generics import ListCreateAPIView, RetrieveUpdateDestroyAPIView
-from rest_framework.pagination import LimitOffsetPagination
+from rest_framework import viewsets, status
 from rest_framework.response import Response
-from .models import *
-from store.serializers import *
+from rest_framework.permissions import AllowAny, IsAuthenticated, IsAdminUser
+from rest_framework.generics import (
+    ListCreateAPIView,
+    RetrieveUpdateDestroyAPIView,
+    GenericAPIView,
+    ListAPIView
+)
+from user.services.exceptions import InsufficientStockError
+from user.services.ordering import confirm_order
+from user.services.searching import search_products
+from rest_framework.pagination import LimitOffsetPagination
 from rest_framework.decorators import api_view
-from django.db.models import Max
-from rest_framework.permissions import *
-from rest_framework.viewsets import ModelViewSet
-from rest_framework import viewsets
-from django_filters.rest_framework import DjangoFilterBackend
-from .filters import ProductFilter
-from rest_framework.generics import ListCreateAPIView, RetrieveUpdateDestroyAPIView, GenericAPIView
-from contextlib import nullcontext
-from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.views import APIView
+from rest_framework_simplejwt.authentication import JWTAuthentication
+from django.db.models import Max
+from django_filters.rest_framework import DjangoFilterBackend
 
-# region Sara
-class ProductView(ModelViewSet):
+from .models import *
+from .serializers import *
+from .filters import ProductFilter
+from user.services.searching import search_products
+
+
+# ===================== PRODUCTS =====================
+
+class ProductViewSet(viewsets.ModelViewSet):
     queryset = Product.objects.all()
     serializer_class = ProductSerializer
     filter_backends = [DjangoFilterBackend]
     filterset_class = ProductFilter
 
     def get_permissions(self):
-        self.permission_classes = [AllowAny]
+        if self.request.method in ["POST", "PUT", "PATCH", "DELETE"]:
+            return [IsAdminUser()]
+        return [AllowAny()]
 
-        if self.request.method in ['POST', 'DELETE', 'PUT', 'PATCH']:
-            self.permission_classes = [IsAdminUser]
 
-        return super().get_permissions()
-
-    filter_backends = [DjangoFilterBackend]
-    filterset_class = ProductFilter
-
-@api_view(['GET'])
+@api_view(["GET"])
 def product_info(request):
     products = Product.objects.all()
     serializer = ProductInfoSerializer({
-        'products':products,
-        'count':len(products),
-        'max_price' :products.aggregate(max_price=Max('price'))['max_price']
+        "products": products,
+        "count": products.count(),
+        "max_price": products.aggregate(max_price=Max("price"))["max_price"]
     })
     return Response(serializer.data)
 
-class ProductImageViewSet(ModelViewSet):
+
+class ProductImageViewSet(viewsets.ModelViewSet):
     queryset = ProductImage.objects.all()
     serializer_class = ProductImageSerializer
 
     def perform_create(self, serializer):
-        """
-        اگر عکسی main شد،
-        بقیه عکس‌های main همون محصول false بشن
-        """
-        product = serializer.validated_data['product']
-        is_main = serializer.validated_data.get('is_main', False)
+        product = serializer.validated_data["product"]
+        is_main = serializer.validated_data.get("is_main", False)
 
         if is_main:
-            ProductImage.objects.filter(
-                product=product,
-                is_main=True
-            ).update(is_main=False)
+            ProductImage.objects.filter(product=product, is_main=True).update(is_main=False)
 
         serializer.save()
 
-class CategoryViewSet(ModelViewSet):
+
+class CategoryViewSet(viewsets.ModelViewSet):
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
 
-#endregion
 
-# region Kooshan
+# ===================== PAGINATION =====================
+
 class CustomLimitOffsetPagination(LimitOffsetPagination):
     default_limit = 10
     max_limit = 120
-    limit_query_param = 'size'      # به جای ?limit=...
-    offset_query_param = 'page'     # به جای ?offset=...
-    default_offset = 0
+    limit_query_param = "size"
+    offset_query_param = "page"
 
+
+# ===================== ADDRESS =====================
 
 class AddressGenericApiView(ListCreateAPIView):
-    queryset =  Address.objects.all()
+    queryset = Address.objects.all()
     serializer_class = AddressSerializer
     pagination_class = CustomLimitOffsetPagination
-    permission_classes = [IsAuthenticated]
     authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+
 class AddressGenericDetailView(RetrieveUpdateDestroyAPIView):
     queryset = Address.objects.all()
     serializer_class = AddressSerializer
-    pagination_class = CustomLimitOffsetPagination()
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
 
+
+# ===================== ORDERS =====================
 
 class OrdersGenericApiView(GenericAPIView):
-    serializer_class = OrderSerializer
     queryset = Order.objects.all()
+    serializer_class = OrderSerializer
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
 
-    def get(self, request, *args, **kwargs):
+    def get(self, request):
         orders = self.get_queryset()
         serializer = self.get_serializer(orders, many=True)
         return Response(serializer.data)
 
-    def post(self, request, *args, **kwargs):
+    def post(self, request):
         items_data = request.data.pop("items", [])
         serializer = self.get_serializer(
             data=request.data,
@@ -112,146 +115,124 @@ class OrdersGenericApiView(GenericAPIView):
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(serializer.data, status=status.HTTP_201_CREATED)
-    
+
+
 class OrdersGenericDetailView(RetrieveUpdateDestroyAPIView):
     queryset = Order.objects.all()
     serializer_class = OrderSerializer
-    pagination_class = CustomLimitOffsetPagination()
-    permission_classes = [IsAuthenticated]
     authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
     def delete(self, request, *args, **kwargs):
         order = self.get_object()
-
         if order.status != Order.Status.PENDING:
-            return Response(
-                {"detail": "Only pending orders can be deleted."},
-                status=400
-            )
-
+            return Response({"detail": "Only pending orders can be deleted"}, status=400)
         return super().delete(request, *args, **kwargs)
+
 
 class OrderItemsGenericApiView(ListCreateAPIView):
     queryset = OrderItem.objects.all()
     serializer_class = OrderItemSerializer
-    pagination_class = CustomLimitOffsetPagination
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
+
 
 class OrderItemsGenericDetailView(RetrieveUpdateDestroyAPIView):
     queryset = OrderItem.objects.all()
     serializer_class = OrderItemSerializer
-    pagination_class = CustomLimitOffsetPagination
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
 
+
+# ===================== AUTH =====================
 
 class LogoutView(GenericAPIView):
+    serializer_class = LogoutSerializer
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
-    serializer_class = LogoutSerializer
 
     def post(self, request):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         serializer.save()
-
         return Response({"detail": "User logged out"})
-    
+
 
 class ChangePasswordView(GenericAPIView):
     serializer_class = ChangePasswordSerializer
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        serializer = self.get_serializer(
-            data=request.data,
-            context={"request": request}
-        )
-        serializer.is_valid(raiseExceptions=True)
-        serializer.save()
-        return Response({"detail": "Password changed successfully!"})
-
-
-class PasswordResetRequestView(GenericAPIView):
-    serializer_class = PasswordResetRequestSerializer
-
-    def post(self, request):
-        serializer = self.get_serializer(
-            data=request.data,
-            context={
-                "send_reset": nullcontext  # serializers send email TODO
-            }
-        )
-
+        serializer = self.get_serializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
         serializer.save()
-        return Response({"detail": "Check your email, recovery email has been sent"})
-
-class PasswordResetConfirmView(GenericAPIView):
-    serializer_class = PasswordResetConfirmSerializer
+        return Response({"detail": "Password changed"})
 
 
-    def post(self, request):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        serializer.save()
-        return Response({"detail": "Password reset successful"})
+# ===================== SEARCH =====================
 
-#endregion
-    
-# region Mostafa
+class ProductSearchAPIView(APIView):
+    permission_classes = [AllowAny]
 
-class IsOwnerMixin:
-    def get_queryset(self):
-        return super().get_queryset().filter(user=self.request.user)
+    def get(self, request):
+        query = request.query_params.get("q", "").strip()
+        if not query:
+            return Response([])
+        products = search_products(query)
+        serializer = ProductSerializer(products, many=True)
+        return Response(serializer.data)
 
 
-class CartViewSet(viewsets.ModelViewSet):
-    queryset = Cart.objects.all()
-    serializer_class = CartSerializer
-    permission_classes = [IsAuthenticated]
-class CartItemViewSet(viewsets.ModelViewSet):
-    serializer_class = CartItemSerializer
-    permission_classes = [IsAuthenticated]
+# ===================== PRICE HISTORY =====================
+
+class ProductPriceHistoryView(ListAPIView):
+    serializer_class = ProductPriceHistorySerializer
 
     def get_queryset(self):
-        user = self.request.user
+        product_id = self.kwargs["pk"]
+        qs = ProductPriceHistory.objects.filter(product_id=product_id)
+
+        start = self.request.query_params.get("from")
+        end = self.request.query_params.get("to")
+
+        if start and end:
+            qs = qs.filter(valid_from__lte=end, valid_to__gte=start)
+
+        return qs.order_by("-valid_from")
+
+
+class OrderConfirmAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
         try:
-            cart = Cart.objects.get(user=user)
-            return cart.items.all()
-        except Cart.DoesNotExist:
-            return CartItem.objects.none()
+            order = Order.objects.get(
+                id=pk,
+                user=request.user,
+                status="draft"
+            )
 
-    def perform_create(self, serializer):
-        cart = Cart.objects.get_or_create(user=self.request.user)[0]
-        if cart.is_locked:
-            raise serializers.ValidationError("The cart is locked and cannot be modified.")
-        serializer.save(cart=cart)
+            confirm_order(order = order, user = request.user )
 
-    def perform_update(self, serializer):
-        if serializer.instance.cart.is_locked:
-            raise serializers.ValidationError("The cart is locked and cannot be modified.")
-        serializer.save()
-
-    def perform_destroy(self, instance):
-        if instance.cart.is_locked:
-            raise serializers.ValidationError("The cart is locked and cannot be modified.")
-        instance.delete()
-
-class LockCartForPaymentAPIView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def post(self, request):
-        cart = request.user.cart
-
-        if cart.is_locked:
             return Response(
-                {"detail": "The cart is locked and cannot be modified."},
-                status=400
-              )
+                {"detail": "Order confirmed successfully"},
+                status=status.HTTP_200_OK
+            )
 
-        cart.is_locked = True
-        cart.save()
+        except Order.DoesNotExist:
+            return Response(
+                {"detail": "Draft order not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
 
-        return Response({"detail": "Cart locked for payment."})
-#endregion    
+        except InsufficientStockError as e:
+            return Response(
+                {
+                    "detail": "Insufficient stock..!",
+                    "product_id": e.product_id,
+                    "requested": e.requested,
+                    "available": e.available,
+                },
+                status=status.HTTP_409_CONFLICT
+            )
+

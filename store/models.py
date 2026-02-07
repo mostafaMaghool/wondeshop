@@ -1,9 +1,8 @@
 from django.conf import settings
 from django.db import models
-
 from django.core.validators import MinLengthValidator
-
-#region Sara
+from django.utils import timezone
+# region Kooshan
 from django.utils.text import slugify
 class Category(models.Model):
     name = models.CharField(max_length=100, unique=True)
@@ -34,9 +33,9 @@ class Product(models.Model):
         on_delete=models.PROTECT,
         related_name='products'
     )
-    is_active = models.BooleanField(default=True)
-
-
+    is_active = models.BooleanField(default=True)    
+    slug = models.SlugField(unique=True)
+    created_at = models.DateTimeField(default=timezone.now)
     class Meta:
         verbose_name = 'product'
         verbose_name_plural = 'products'
@@ -156,7 +155,7 @@ class ProductPriceHistory(models.Model):
         related_name="price_history",
         on_delete=models.CASCADE
     )
-    price = models.DecimalField(max_digits=10, decimal_places=2)
+    price = models.DecimalField(max_digits=10, decimal_places=2,default=0)
 
     valid_from = models.DateTimeField()
     valid_to = models.DateTimeField(null=True, blank=True)
@@ -175,6 +174,7 @@ class OrderItem(models.Model):
     order = models.ForeignKey(Order, on_delete=models.CASCADE)
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
     quantity = models.PositiveIntegerField()
+    price = models.DecimalField(max_digits=10, decimal_places=2) 
 
     @property
     def item_subtotal(self):
