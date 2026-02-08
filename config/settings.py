@@ -52,6 +52,12 @@ INSTALLED_APPS = [
 ]
 
 AUTH_USER_MODEL = "user.User"
+ALLOWED_HOSTS = ["*"]
+CSRF_TRUSTED_ORIGINS = [
+    "https://*.liara.run",
+    "https://*.liara.ir"
+]
+
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -162,4 +168,4 @@ SPECTACULAR_SETTINGS ={
     'SERVER_INCLUDE_SCHEMA': False,
 }
 
-  
+STATIC_ROOT = BASE_DIR / "staticfiles"
