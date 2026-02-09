@@ -8,6 +8,7 @@ from rest_framework.generics import (
     ListAPIView
 )
 from user.services.exceptions import InsufficientStockError
+from user.services.fake_gateway import FakePaymentGateway
 from user.services.ordering import confirm_order
 from user.services.searching import search_products
 from rest_framework.pagination import LimitOffsetPagination
@@ -236,3 +237,50 @@ class OrderConfirmAPIView(APIView):
                 status=status.HTTP_409_CONFLICT
             )
 
+class InitiatePaymentAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, order_id):
+        order = Order.objects.get(id=order_id, user=request.user)
+
+        if order.is_paid:
+            return Response({"detail": "Order already paid"}, status=400)
+
+        gateway_data = FakePaymentGateway.initiate(order.total_amount)
+
+        payment = Payment.objects.create(
+            order=order,
+            amount=order.total_amount,
+            transaction_id=gateway_data["transaction_id"],
+        )
+
+        return Response({
+            "payment_url": gateway_data["payment_url"],
+            "transaction_id": payment.transaction_id,
+        })
+
+
+class VerifyPaymentAPIView(APIView):
+    def post(self, request):
+        transaction_id = request.data.get("transaction_id")
+
+        payment = Payment.objects.get(transaction_id=transaction_id)
+
+        if payment.status != Payment.Status.PENDING:
+            return Response(
+                {"detail": "Payment already processed"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        result = FakePaymentGateway.verify(transaction_id)
+
+        if result["success"]:
+            payment.status = Payment.Status.PAID
+            payment.save()
+            payment.order.mark_paid()
+            return Response({"detail": "Payment successful"})
+
+        payment.status = Payment.Status.FAILED
+        payment.save()
+        payment.order.rollback_payment()
+        return Response({"detail": "Payment failed"})

@@ -7,14 +7,14 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet, ReadOnlyModelViewSet
 
+from store.models import Order
 from user.api.admin_models import Article, Media, Icon, AuditLog, IconCategory
 from user.api.admin_user_serializer import UserAdminSerializer, ArticleSerializer, MediaSerializer, IconSerializer, \
     AuditLogSerializer, IconCategorySerializer
-from user.models import Order
-from user.services.analytics import get_admin_kpis
-from user.services.ordering import change_order_status
 from user.models import User
 from user.permissions import IsSuperOrSiteAdmin, IsSuperAdmin
+from user.services.analytics import get_admin_kpis
+from user.services.ordering import change_order_status
 
 
 class AdminDashboardAPIView(APIView):

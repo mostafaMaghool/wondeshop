@@ -1,9 +1,10 @@
 from django.conf import settings
-from django.db import models
+from django.db import models, transaction
 from django.core.validators import MinLengthValidator
 from django.utils import timezone
-# region Kooshan
 from django.utils.text import slugify
+
+# region Kooshan
 class Category(models.Model):
     name = models.CharField(max_length=100, unique=True)
     slug = models.SlugField(max_length=120, unique=True, blank=True)
@@ -94,7 +95,24 @@ class Payment(models.Model):
         on_delete=models.CASCADE,
         related_name='payments'
     )
+    class Status(models.TextChoices):
+        PENDING = "pending"
+        PAID = "paid"
+        FAILED = "failed"
+
+    status = models.CharField(
+        max_length=16,
+        choices=Status.choices,
+        default=Status.PENDING,
+    )
+    order = models.OneToOneField(
+        "store.Order",
+        on_delete=models.PROTECT,
+        related_name="payment",
+    )
+    transaction_id = models.CharField(max_length=128, unique=True)
     payment_date = models.DateTimeField(auto_now_add=True)
+
     amount = models.DecimalField(max_digits=15, decimal_places=2)
 
     class Method(models.TextChoices):
@@ -140,7 +158,31 @@ class Order(models.Model):
                                verbose_name="the time of order being edited")
     shipment_time = models.DateTimeField(null=True, blank=True,verbose_name="the set time ,so that the order be shipped")
 
-    follow_up_code = models.BigIntegerField()
+    is_paid = models.BooleanField(default=False)
+
+    def mark_paid(self):
+        """
+        Final irreversible state
+        """
+        with transaction.atomic():
+            self.is_paid = True
+            self.status = self.Status.PAID
+            self.save()
+
+            self.reserve_stock(commit=True)
+            #TODO for inventory section, and stock reservation
+
+    def rollback_payment(self):
+        """
+        Called on payment failure
+        """
+        with transaction.atomic():
+            self.release_reserved_stock()
+            # TODO also referenced before implementation, like reserve_stock()
+            self.status = self.Status.CANCELLED
+            self.save()
+
+    # follow_up_code = models.BigIntegerField()
 
     class Meta:
         ordering = ['-created_at']
@@ -180,7 +222,7 @@ class OrderItem(models.Model):
     def item_subtotal(self):
         return self.quantity * self.product.price
     def __str__(self):
-        return f"{self.quantity} x {self.product.name} in order {self.order.order_id}"
+        return f"{self.quantity} x {self.product.name} in order {self.order.id}"
 
 class Address(models.Model):
 
@@ -214,6 +256,7 @@ class Cart(models.Model):
                                 related_name='cart')
     created_at = models.DateTimeField(auto_now_add=True)
     is_locked = models.BooleanField(default=False)
+
     def total_price(self):
         return sum(
             item.quantity * item.product.price
