@@ -91,7 +91,7 @@ class AdminOrderStatusAPIView(GenericAPIView):
 
 
 class AuditLogViewSet(ReadOnlyModelViewSet):
+    queryset = AuditLog.objects.all().order_by("-created_at")
     permission_classes = [IsSuperAdmin]
     serializer_class = AuditLogSerializer
-    queryset = AuditLog.objects.all()
 

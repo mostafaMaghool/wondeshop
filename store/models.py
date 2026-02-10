@@ -3,6 +3,10 @@ from django.db import models, transaction
 from django.core.validators import MinLengthValidator
 from django.utils import timezone
 from django.utils.text import slugify
+from rest_framework.exceptions import ValidationError
+
+from user.services.inventory import deduct_stock_for_order
+
 
 # region Kooshan
 class Category(models.Model):
@@ -158,6 +162,12 @@ class Order(models.Model):
                                verbose_name="the time of order being edited")
     shipment_time = models.DateTimeField(null=True, blank=True,verbose_name="the set time ,so that the order be shipped")
 
+    shipping_full_name = models.CharField(max_length=80)
+    shipping_phone = models.CharField(max_length=24)
+    shipping_address = models.TextField()
+    shipping_city = models.CharField(max_length=128)
+    shipping_postal_code = models.CharField(max_length=20)
+
     is_paid = models.BooleanField(default=False)
 
     def mark_paid(self):
@@ -169,8 +179,9 @@ class Order(models.Model):
             self.status = self.Status.PAID
             self.save()
 
-            self.reserve_stock(commit=True)
-            #TODO for inventory section, and stock reservation
+            deduct_stock_for_order(order = self)
+            # is it architecurally implemented correctly
+            # for inventory section, and stock reservation?
 
     def rollback_payment(self):
         """
@@ -181,6 +192,19 @@ class Order(models.Model):
             # TODO also referenced before implementation, like reserve_stock()
             self.status = self.Status.CANCELLED
             self.save()
+
+    def save(self, *args, **kwargs):
+        if self.pk and self.status == Order.Status.PAID:
+            protected_fields = [
+                "shipping_full_name",
+                "shipping_phone",
+                "shipping_address",
+                "shipping_city",
+                "shipping_postal_code",
+            ]
+            if self._state.adding is False:
+                raise ValidationError("Paid order cannot be modified")
+        super().save(*args, **kwargs)
 
     # follow_up_code = models.BigIntegerField()
 
@@ -216,7 +240,12 @@ class OrderItem(models.Model):
     order = models.ForeignKey(Order, on_delete=models.CASCADE)
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
     quantity = models.PositiveIntegerField()
-    price = models.DecimalField(max_digits=10, decimal_places=2) 
+    price = models.DecimalField(max_digits=10, decimal_places=2)
+
+    def save(self, *args, **kwargs):
+        if self.pk and self.order.status == Order.Status.PAID:
+            raise ValidationError("Cannot modify order items after payment")
+        super().save(*args, **kwargs)
 
     @property
     def item_subtotal(self):
@@ -255,7 +284,12 @@ class Cart(models.Model):
                                 on_delete=models.CASCADE,
                                 related_name='cart')
     created_at = models.DateTimeField(auto_now_add=True)
-    is_locked = models.BooleanField(default=False)
+
+    def is_locked(self):
+        return Order.objects.filter(
+            user=self.user,
+            status=Order.Status.PAID,
+        ).exists()
 
     def total_price(self):
         return sum(

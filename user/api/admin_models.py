@@ -1,8 +1,9 @@
-from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.contrib.contenttypes.fields import GenericForeignKey, GenericRelation
 from django.contrib.contenttypes.models import ContentType
 from django.db import models
-from django.forms import SlugField, CharField, DateTimeField
+
+User = get_user_model()
 
 class Media(models.Model):
     class MediaType(models.TextChoices):
@@ -73,26 +74,33 @@ class Icon(models.Model):
 
 
 class AuditLog(models.Model):
+
     ACTION_CHOICES = (
-        ("order_confirmed", "Order Confirmed"),
-        ("stock_adjusted", "Stock Adjusted"),
-        ("price_changed", "Price Changed"),
+        ("created", "Created"),
+        ("price_changed", "Price_Changed"),
+        ("status_changed", "Status_Changed"),
+        ("updated", "Updated"),
+        ("deleted", "Deleted"),
+        ("snapshot", "Snapshot"),
+
     )
 
-
     user = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
+        User,
         on_delete=models.SET_NULL,
         null=True,
         blank=True
     )
 
-
-    action = models.CharField(max_length=50, choices=ACTION_CHOICES)
-    object_type = models.CharField(max_length=50)
+    content_type = models.ForeignKey(
+        ContentType,
+        on_delete=models.CASCADE,
+    )
     object_id = models.PositiveIntegerField()
+    content_object = GenericForeignKey()
 
-    metadata = models.JSONField(default=dict, blank=True)
+    before = models.JSONField(null=True, blank=True)
+    after = models.JSONField(null=True, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
 

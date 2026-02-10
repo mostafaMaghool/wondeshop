@@ -1,4 +1,5 @@
 from rest_framework import viewsets, status
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated, IsAdminUser
 from rest_framework.generics import (
@@ -7,10 +8,12 @@ from rest_framework.generics import (
     GenericAPIView,
     ListAPIView
 )
+
+from user.api.admin_models import AuditLog
+from user.services.audit import log_snapshot_change
 from user.services.exceptions import InsufficientStockError
 from user.services.fake_gateway import FakePaymentGateway
-from user.services.ordering import confirm_order
-from user.services.searching import search_products
+from user.services.ordering import confirm_order, snapshot_address
 from rest_framework.pagination import LimitOffsetPagination
 from rest_framework.decorators import api_view
 from rest_framework.views import APIView
@@ -18,9 +21,9 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from django.db.models import Max
 from django_filters.rest_framework import DjangoFilterBackend
 
-from .models import *
-from .serializers import *
-from .filters import ProductFilter
+
+from store.serializers import *
+from store.filters import ProductFilter
 from user.services.searching import search_products
 
 
@@ -139,11 +142,25 @@ class OrderItemsGenericApiView(ListCreateAPIView):
 
 
 class OrderItemsGenericDetailView(RetrieveUpdateDestroyAPIView):
-    queryset = OrderItem.objects.all()
     serializer_class = OrderItemSerializer
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
 
+    def get_queryset(self):
+        return OrderItem.objects.filter(order__user=self.request.user)
+
+    def perform_update(self, serializer):
+        order_item = self.get_object()
+        if order_item.order.status == Order.Status.PAID:
+            raise PermissionDenied("Order is locked after payment,"
+                                   " and cannot be updated..!")
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        if instance.order.status == Order.Status.PAID:
+            raise PermissionDenied("Order is locked after payment, "
+                                   "and cannot be deleted..!")
+        instance.delete()
 
 # ===================== AUTH =====================
 
@@ -241,7 +258,15 @@ class InitiatePaymentAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request, order_id):
+        address_id = request.data.get("address_id")
         order = Order.objects.get(id=order_id, user=request.user)
+
+        address = Address.objects.get(
+            id=address_id,
+            user=request.user
+        )
+
+        snapshot_address(order, address, user=request.user)
 
         if order.is_paid:
             return Response({"detail": "Order already paid"}, status=400)
@@ -275,12 +300,79 @@ class VerifyPaymentAPIView(APIView):
         result = FakePaymentGateway.verify(transaction_id)
 
         if result["success"]:
+            before_status = payment.order.status
+
             payment.status = Payment.Status.PAID
             payment.save()
-            payment.order.mark_paid()
-            return Response({"detail": "Payment successful"})
 
-        payment.status = Payment.Status.FAILED
-        payment.save()
-        payment.order.rollback_payment()
-        return Response({"detail": "Payment failed"})
+            payment.order.status = "paid"
+            payment.order.is_paid = True
+            payment.order.save()
+
+            log_snapshot_change(
+                user=request.user,
+                obj=payment.order,
+                before={"status": before_status},
+                after={"status": payment.order.status},
+                action=AuditLog.ACTION_CHOICES.STATUS_CHANGE,
+            )
+
+            return Response({"detail": "Payment successful"})
+        else:
+            before_status = payment.order.status
+
+            payment.status = Payment.Status.FAILED
+            payment.save()
+
+            payment.order.status = "payment_failed"
+            payment.order.save()
+
+            log_snapshot_change(
+                user=request.user,
+                obj=payment.order,
+                before={"status": before_status},
+                after={"status": payment.order.status},
+                action=AuditLog.ACTION_CHOICES.STATUS_CHANGE,
+            )
+
+            return Response({"detail": "Payment failed"})
+
+class CartItemViewSet(viewsets.ModelViewSet):
+    serializer_class = CartItemSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        try:
+            cart = Cart.objects.get(user=user)
+            return cart.items.all()
+        except Cart.DoesNotExist:
+            return CartItem.objects.none()
+
+    def perform_create(self, serializer):
+        cart, _ = Cart.objects.get_or_create(user=self.request.user)
+
+        if cart.is_locked():
+            raise PermissionDenied("Cart is locked after payment,"
+                                   " cannot add any item")
+
+        serializer.save(cart=cart)
+
+    def perform_update(self, serializer):
+        cart = Cart.objects.get(user=self.request.user)
+
+        if cart.is_locked():
+            raise PermissionDenied("Cart is locked after payment,"
+                                   " cannot update any item")
+
+        serializer.save(cart=cart)
+
+    def perform_destroy(self, instance):
+        cart = Cart.objects.get(user=self.request.user)
+
+        if cart.is_locked():
+            raise PermissionDenied("Cart is locked after payment,"
+                                   " cannot remove any item")
+
+        instance.delete()
+

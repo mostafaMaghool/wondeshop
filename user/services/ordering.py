@@ -3,23 +3,69 @@ from django.db.models import F
 from rest_framework.exceptions import PermissionDenied
 
 from store.models import OrderItem, Order, Product
-from user.services.audit import log_action
+from user.api.admin_models import AuditLog
+from user.services.audit import log_snapshot_change
 from user.services.inventory import deduct_stock_for_order
 
 
 @transaction.atomic
-def create_order_item(*, order, product, quantity):
+def create_order_item(*, order: Order, product, quantity):
     """
     Create an order item and snapshot product price.
     """
     if order.status != "draft":
         raise ValueError("Cannot modify confirmed order!")
 
-    return OrderItem.objects.create(
+    order_item = OrderItem.objects.create(
         order=order,
         product=product,
-        unit_price=product.price,  # 🔒 The snapshot!!
         quantity=quantity,
+        price=product.price,
+    )
+
+    log_snapshot_change(
+        user=Order.user,
+        obj=order_item,
+        before=None,
+        after={
+            "product_id": product.id,
+            "quantity": quantity,
+            "price": product.price,
+        },
+        action=AuditLog.ACTION_CHOICES.SNAPSHOT,
+    )
+    return order_item
+
+def snapshot_address(order, address, user):
+    before = {
+        "shipping_full_name": order.shipping_full_name,
+        "shipping_phone": order.shipping_phone,
+        "shipping_address": order.shipping_address,
+        "shipping_city": order.shipping_city,
+        "shipping_postal_code": order.shipping_postal_code,
+    }
+
+    order.shipping_full_name = address.full_name
+    order.shipping_phone = address.phone
+    order.shipping_address = address.address
+    order.shipping_city = address.city
+    order.shipping_postal_code = address.postal_code
+    order.save()
+
+    after = {
+        "shipping_full_name": order.shipping_full_name,
+        "shipping_phone": order.shipping_phone,
+        "shipping_address": order.shipping_address,
+        "shipping_city": order.shipping_city,
+        "shipping_postal_code": order.shipping_postal_code,
+    }
+
+    log_snapshot_change(
+        user=user,
+        obj=order,
+        before=before,
+        after=after,
+        action=AuditLog.ACTION_CHOICES.SNAPSHOT,
     )
 
 
@@ -38,7 +84,7 @@ def confirm_order(*, order: Order, user = None):
     order.status = "confirmed"
     order.save(update_fields=["status"])
 
-    log_action(
+    log_snapshot_change(
         user=user,
         action="order_confirmed",
         obj=order,
@@ -61,7 +107,7 @@ def adjust_product_stock(*, product, delta: int, reason: str = "", user = None):
         product.stock = F("stock") + delta
         product.save(update_fields=["stock"])
 
-        log_action(
+        log_snapshot_change(
             user=user,
             action="stock_adjusted",
             obj=product,
@@ -75,7 +121,7 @@ def change_order_status(*, order, new_status, user):
     order.status = new_status
     order.save(update_fields=["status"])
 
-    log_action(
+    log_snapshot_change(
         user=user,
         action="order_status_changed",
         obj=order,

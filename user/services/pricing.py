@@ -1,7 +1,7 @@
 from django.db import transaction
 from django.utils import timezone
 from store.models import ProductPriceHistory
-from user.services.audit import log_action
+from user.services.audit import log_snapshot_change
 
 
 @transaction.atomic
@@ -35,7 +35,7 @@ def change_product_price(*, product, new_price, user = None):
     product.price = new_price
     product.save(update_fields=["current_price"])
 
-    log_action(
+    log_snapshot_change(
         user=user,
         action="price_changed",
         obj=product,
