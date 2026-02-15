@@ -137,6 +137,7 @@ class Order(models.Model):
         PAID = 'paid', 'Paid'
         SHIPPED = 'shipped', 'Shipped'
         DELIVERED = 'delivered', 'Delivered'
+        PAYMENT_FAILED = 'payment_failed', 'Payment Failed'
         CANCELLED = 'cancelled', 'Cancelled'
 
     follow_up_code = models.BigIntegerField(unique=True, editable=False)

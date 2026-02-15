@@ -6,9 +6,11 @@ from rest_framework.generics import (
     ListCreateAPIView,
     RetrieveUpdateDestroyAPIView,
     GenericAPIView,
-    ListAPIView
+    ListAPIView, get_object_or_404
 )
 
+from store.services.payments.gateway import PaymentGatewayService
+from store.services.payments.verification import finalize_payment
 from user.api.admin_models import AuditLog
 from user.services.audit import log_snapshot_change
 from user.services.exceptions import InsufficientStockError
@@ -286,56 +288,108 @@ class InitiatePaymentAPIView(APIView):
 
 
 class VerifyPaymentAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
     def post(self, request):
         transaction_id = request.data.get("transaction_id")
 
-        payment = Payment.objects.get(transaction_id=transaction_id)
+        if not transaction_id:
+            return Response(
+                {"detail": "Transaction id is required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
+        payment = get_object_or_404(
+            Payment.objects.select_related("order"),
+            transaction_id=transaction_id,
+            order__user=request.user,
+        )
+
+        # Idempotency protection
         if payment.status != Payment.Status.PENDING:
             return Response(
                 {"detail": "Payment already processed"},
-                status=status.HTTP_400_BAD_REQUEST,
+                status=status.HTTP_200_OK,
             )
 
         result = FakePaymentGateway.verify(transaction_id)
 
-        if result["success"]:
+        with transaction.atomic():
+
             before_status = payment.order.status
 
-            payment.status = Payment.Status.PAID
-            payment.save()
+            if result["success"]:
+                payment.status = Payment.Status.PAID
+                payment.save()
 
-            payment.order.status = "paid"
-            payment.order.is_paid = True
-            payment.order.save()
+                payment.order.status = Order.Status.PAID
+                payment.order.is_paid = True
+                payment.order.save()
 
-            log_snapshot_change(
-                user=request.user,
-                obj=payment.order,
-                before={"status": before_status},
-                after={"status": payment.order.status},
-                action=AuditLog.ACTION_CHOICES.STATUS_CHANGE,
+                log_snapshot_change(
+                    user=request.user,
+                    obj=payment.order,
+                    before={"status": before_status},
+                    after={"status": payment.order.status},
+                    action=AuditLog.ACTION_CHOICES.STATUS_CHANGE,
+                )
+
+                return Response(
+                    {"detail": "Payment successful"},
+                    status=status.HTTP_200_OK,
+                )
+
+            else:
+                payment.status = Payment.Status.FAILED
+                payment.save()
+
+                payment.order.status = Order.Status.PAYMENT_FAILED
+                payment.order.save()
+
+                log_snapshot_change(
+                    user=request.user,
+                    obj=payment.order,
+                    before={"status": before_status},
+                    after={"status": payment.order.status},
+                    action=AuditLog.ACTION_CHOICES.STATUS_CHANGE,
+                )
+
+                return Response(
+                    {"detail": "Payment failed"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+
+class PaymentCallbackAPIView(APIView):
+    """"
+    called by payment gateway
+    """
+
+    permission_classes = [AllowAny]  # gateway has no user session
+
+    def post(self, request):
+        transaction_id = request.data.get("transaction_id")
+
+        if not transaction_id:
+            return Response({"detail": "Missing transaction id"}, status=400)
+
+        try:
+            payment = Payment.objects.select_related("order").get(
+                transaction_id=transaction_id
             )
+        except Payment.DoesNotExist:
+            return Response({"detail": "Invalid transaction"}, status=404)
 
-            return Response({"detail": "Payment successful"})
-        else:
-            before_status = payment.order.status
+        # Verify with gateway
+        gateway_response = PaymentGatewayService.verify(transaction_id)
 
-            payment.status = Payment.Status.FAILED
-            payment.save()
+        finalize_payment(
+            payment=payment,
+            verified_status=gateway_response["status"],
+            user=None,  # system-triggered
+        )
 
-            payment.order.status = "payment_failed"
-            payment.order.save()
-
-            log_snapshot_change(
-                user=request.user,
-                obj=payment.order,
-                before={"status": before_status},
-                after={"status": payment.order.status},
-                action=AuditLog.ACTION_CHOICES.STATUS_CHANGE,
-            )
-
-            return Response({"detail": "Payment failed"})
+        return Response({"detail": "Callback processed"})
 
 class CartItemViewSet(viewsets.ModelViewSet):
     serializer_class = CartItemSerializer
