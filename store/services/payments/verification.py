@@ -25,8 +25,6 @@ def finalize_payment(*, payment, verified_status, user=None):
             payment.order.is_paid = True
             payment.order.save()
 
-            deduct_stock_for_order(order= payment.order)
-
             log_snapshot_change(
                 user=user,
                 obj=payment.order,

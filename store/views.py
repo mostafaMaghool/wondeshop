@@ -15,6 +15,7 @@ from user.api.admin_models import AuditLog
 from user.services.audit import log_snapshot_change
 from user.services.exceptions import InsufficientStockError
 from user.services.fake_gateway import FakePaymentGateway
+from user.services.inventory import deduct_stock_for_order
 from user.services.ordering import confirm_order, snapshot_address
 from rest_framework.pagination import LimitOffsetPagination
 from rest_framework.decorators import api_view
@@ -104,7 +105,8 @@ class AddressGenericDetailView(RetrieveUpdateDestroyAPIView):
 class OrdersGenericApiView(ListCreateAPIView):
     serializer_class = OrderSerializer
     authentication_classes = [JWTAuthentication]
-    permission_classes = [IsAuthenticated]
+    permission_classes = [AllowAny]
+    # permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
         user = self.request.user
@@ -318,6 +320,8 @@ class VerifyPaymentAPIView(APIView):
                 payment.order.status = Order.Status.PAID
                 payment.order.is_paid = True
                 payment.order.save()
+
+                deduct_stock_for_order(order= payment.order)
 
                 log_snapshot_change(
                     user=request.user,
