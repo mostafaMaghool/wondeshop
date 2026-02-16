@@ -76,10 +76,10 @@ class AddressSerializer(ModelSerializer):
 
 
 class OrderItemSerializer(ModelSerializer):
-    order = PrimaryKeyRelatedField(
-        queryset=Order.objects.all(),
-        write_only=True,
-        help_text="related order identifier"
+    order = models.ForeignKey(
+        Order,
+        related_name="items",
+        on_delete=models.CASCADE
     )
 
     product = PrimaryKeyRelatedField(
@@ -111,7 +111,7 @@ class OrderItemSerializer(ModelSerializer):
         model = OrderItem
         fields = [
             "id",
-            "order",
+            "product",
             # "order_detail",
             "quantity",
             "item_subtotal"
@@ -132,32 +132,42 @@ import random
 
 class OrderSerializer(serializers.ModelSerializer):
 
-    def create(self, validated_data):
-        # 🔥 تولید کد پیگیری امن
-        validated_data["follow_up_code"] = random.randint(1000000000, 9999999999)
+    def generate_follow_up_code(self):
+        while True:
+            code = random.randint(1000000000, 9999999999)
+            if not Order.objects.filter(follow_up_code=code).exists():
+                return code
 
-        items_data = self.context.get("items_data", [])
-        order = Order.objects.create(**validated_data)
+    def create(self, validated_data):
+        items_data = validated_data.pop("items")
+        user = self.context["request"].user
+
+        order = Order.objects.create(
+            user=user,
+            follow_up_code=self.generate_follow_up_code(),
+            **validated_data
+        )
 
         total = 0
-        for item_dict in items_data:
-            product_id = item_dict["product"]
 
-            product = Product.objects.get(id=product_id)
+        for item_data in items_data:
+            product = item_data["product"]
+            quantity = item_data["quantity"]
 
             OrderItem.objects.create(
                 order=order,
                 product=product,
-                quantity=item_dict["quantity"]
+                quantity=quantity,
+                price=product.price
             )
 
-            total += product.price * item_dict["quantity"]
-
+            total += product.price * quantity
 
         order.total_amount = total
         order.save()
+
         return order
-    items = OrderItemSerializer(source="orderitem_set", many=True, read_only=True)
+    items = OrderItemSerializer(many=True, read_only=True)
     total_amount = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
     created_at = serializers.DateTimeField(read_only=True)
     updated_at = serializers.DateTimeField(read_only=True)
@@ -165,18 +175,19 @@ class OrderSerializer(serializers.ModelSerializer):
     class Meta:
         model = Order
         fields = [
-            "user",
-            "created_at",
-            "updated_at",
+            # "user",
+            "id",
             "status",
             "total_amount",
             "shipment_time",
+            "shipping_full_name",
+            "shipping_phone",
+            "shipping_address",
+            "shipping_city",
+            "shipping_postal_code",
             "items",
         ]
-        read_only_fields = [
-            "id", "created_at", "updated_at",
-            "total_amount", "items", "follow_up_code"
-        ]
+        read_only_fields = ["id", "status","total_amount"]
 
     def get_items(self, obj):
         # از related_name مدل OrderItem استفاده می‌کنیم

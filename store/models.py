@@ -5,7 +5,7 @@ from django.utils import timezone
 from django.utils.text import slugify
 from rest_framework.exceptions import ValidationError
 
-from user.services.inventory import deduct_stock_for_order
+# from user.services.inventory import deduct_stock_for_order
 
 
 # region Kooshan
@@ -180,7 +180,7 @@ class Order(models.Model):
             self.status = self.Status.PAID
             self.save()
 
-            deduct_stock_for_order(order = self)
+            # deduct_stock_for_order(order = self)
             # is it architecurally implemented correctly
             # for inventory section, and stock reservation?
 
@@ -189,7 +189,7 @@ class Order(models.Model):
         Called on payment failure
         """
         with transaction.atomic():
-            self.release_reserved_stock()
+            # self.release_reserved_stock()
             # TODO also referenced before implementation, like reserve_stock()
             self.status = self.Status.CANCELLED
             self.save()

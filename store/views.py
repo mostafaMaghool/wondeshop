@@ -101,26 +101,19 @@ class AddressGenericDetailView(RetrieveUpdateDestroyAPIView):
 
 # ===================== ORDERS =====================
 
-class OrdersGenericApiView(GenericAPIView):
-    queryset = Order.objects.all()
+class OrdersGenericApiView(ListCreateAPIView):
     serializer_class = OrderSerializer
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
 
-    def get(self, request):
-        orders = self.get_queryset()
-        serializer = self.get_serializer(orders, many=True)
-        return Response(serializer.data)
+    def get_queryset(self):
+        user = self.request.user
+        if not user or not user.is_authenticated:
+            return Order.objects.none()
+        return Order.objects.filter(user=user)
 
-    def post(self, request):
-        items_data = request.data.pop("items", [])
-        serializer = self.get_serializer(
-            data=request.data,
-            context={"request": request, "items_data": items_data}
-        )
-        serializer.is_valid(raise_exception=True)
-        serializer.save()
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
 
 
 class OrdersGenericDetailView(RetrieveUpdateDestroyAPIView):

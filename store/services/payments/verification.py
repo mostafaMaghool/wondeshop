@@ -2,6 +2,7 @@ from django.db import transaction
 
 from user.api.admin_models import AuditLog
 from user.services.audit import log_snapshot_change
+from user.services.inventory import deduct_stock_for_order
 
 
 def finalize_payment(*, payment, verified_status, user=None):
@@ -23,6 +24,8 @@ def finalize_payment(*, payment, verified_status, user=None):
             payment.order.status = payment.order.Status.PAID
             payment.order.is_paid = True
             payment.order.save()
+
+            deduct_stock_for_order(order= payment.order)
 
             log_snapshot_change(
                 user=user,
