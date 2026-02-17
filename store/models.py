@@ -1,6 +1,7 @@
 from django.conf import settings
 from django.db import models, transaction
 from django.core.validators import MinLengthValidator
+from django.db.models import Index
 from django.utils import timezone
 from django.utils.text import slugify
 from rest_framework.exceptions import ValidationError
@@ -181,7 +182,7 @@ class Order(models.Model):
             self.save()
 
             # deduct_stock_for_order(order = self)
-            # is it architecurally implemented correctly
+            # is it architecturally implemented correctly
             # for inventory section, and stock reservation?
 
     def rollback_payment(self):
@@ -210,6 +211,7 @@ class Order(models.Model):
     # follow_up_code = models.BigIntegerField()
 
     class Meta:
+        models.Index(fields = ["status"])
         ordering = ['-created_at']
         verbose_name='order'
 
@@ -253,6 +255,12 @@ class OrderItem(models.Model):
         return self.quantity * self.product.price
     def __str__(self):
         return f"{self.quantity} x {self.product.name} in order {self.order.id}"
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["product"]),
+            models.Index(fields=["order"]),
+        ]
 
 class Address(models.Model):
 

@@ -11,6 +11,7 @@ from rest_framework.generics import (
 
 from store.services.payments.gateway import PaymentGatewayService
 from store.services.payments.verification import finalize_payment
+from store.services.recommendation import get_hybrid_recommendations
 from user.api.admin_models import AuditLog
 from user.services.audit import log_snapshot_change
 from user.services.exceptions import InsufficientStockError
@@ -18,7 +19,7 @@ from user.services.fake_gateway import FakePaymentGateway
 from user.services.inventory import deduct_stock_for_order
 from user.services.ordering import confirm_order, snapshot_address
 from rest_framework.pagination import LimitOffsetPagination
-from rest_framework.decorators import api_view
+from rest_framework.decorators import api_view, action
 from rest_framework.views import APIView
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from django.db.models import Max
@@ -42,6 +43,20 @@ class ProductViewSet(viewsets.ModelViewSet):
         if self.request.method in ["POST", "PUT", "PATCH", "DELETE"]:
             return [IsAdminUser()]
         return [AllowAny()]
+
+    @action(detail=True, methods=["get"])
+    def recommendations(self, request, pk=None):
+        product = get_object_or_404(Product, pk=pk)
+
+        recommended_products = get_hybrid_recommendations(product)
+
+        serializer = ProductSerializer(
+            recommended_products,
+            many=True,
+            context={"request": request},
+        )
+
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 @api_view(["GET"])
