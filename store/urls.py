@@ -9,6 +9,7 @@ router = DefaultRouter()
 router.register("products", views.ProductViewSet, basename="products")
 router.register("product-images", views.ProductImageViewSet, basename="product-images")
 router.register("categories", views.CategoryViewSet, basename="categories")
+router.register(r"admin/products/search", views.AdminProductSearchViewSet, basename= "admin-product-search")
 
 urlpatterns = [
     path("products/info/", views.product_info),

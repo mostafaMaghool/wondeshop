@@ -1,5 +1,6 @@
 from rest_framework import viewsets, status
 from rest_framework.exceptions import PermissionDenied
+from rest_framework.filters import SearchFilter
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated, IsAdminUser
 from rest_framework.generics import (
@@ -8,11 +9,13 @@ from rest_framework.generics import (
     GenericAPIView,
     ListAPIView, get_object_or_404
 )
+from rest_framework.viewsets import ReadOnlyModelViewSet
 
 from store.services.payments.gateway import PaymentGatewayService
 from store.services.payments.verification import finalize_payment
 from store.services.recommendation import get_hybrid_recommendations
 from user.api.admin_models import AuditLog
+from user.permissions import IsSuperOrSiteAdmin
 from user.services.audit import log_snapshot_change
 from user.services.exceptions import InsufficientStockError
 from user.services.fake_gateway import FakePaymentGateway
@@ -27,7 +30,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 
 
 from store.serializers import *
-from store.filters import ProductFilter
+from store.filters import ProductFilter, AdminProductFilter
 from user.services.searching import search_products
 
 
@@ -211,6 +214,32 @@ class ProductSearchAPIView(APIView):
         products = search_products(query)
         serializer = ProductSerializer(products, many=True)
         return Response(serializer.data)
+
+
+class AdminProductSearchViewSet(ReadOnlyModelViewSet):
+    """
+    Admin-only product search
+    Supports:
+    - name (partial)
+    - category (partial)
+    - availability
+    """
+
+    serializer_class = ProductSerializer
+    permission_classes = [IsSuperOrSiteAdmin]
+    queryset = Product.objects.select_related("category").all()
+
+    filter_backends = [
+        DjangoFilterBackend,
+        SearchFilter,
+    ]
+
+    filterset_class = AdminProductFilter
+
+    search_fields = [
+        "name",
+        "category__name",
+    ]
 
 
 # ===================== PRICE HISTORY =====================

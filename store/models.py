@@ -1,10 +1,10 @@
 from django.conf import settings
-from django.db import models, transaction
 from django.core.validators import MinLengthValidator
-from django.db.models import Index
+from django.db import models, transaction
 from django.utils import timezone
 from django.utils.text import slugify
 from rest_framework.exceptions import ValidationError
+
 
 # from user.services.inventory import deduct_stock_for_order
 
@@ -18,6 +18,7 @@ class Category(models.Model):
     class Meta:
         verbose_name = 'category'
         verbose_name_plural = 'categories'
+        indexes = models.Index(fields = ["name"])
 
     def save(self, *args, **kwargs):
         if not self.slug:
@@ -45,6 +46,10 @@ class Product(models.Model):
     class Meta:
         verbose_name = 'product'
         verbose_name_plural = 'products'
+        indexes = [
+            models.Index(fields=["name"]),
+            models.Index(fields=["stock"])
+        ]
         
     def __str__(self):
         return self.name
