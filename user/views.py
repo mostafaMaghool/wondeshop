@@ -14,6 +14,8 @@ from django.db.models.signals import post_save
 from django.dispatch import receiver
 from rest_framework.views import APIView
 from rest_framework.permissions import *
+from rest_framework.generics import GenericAPIView
+from rest_framework_simplejwt.authentication import JWTAuthentication
 
 # Mostafa
 
@@ -118,3 +120,17 @@ class UserPanelAPIView(APIView):
                 "items": items
             }
         })
+    
+
+
+class LogoutView(GenericAPIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+    serializer_class = LogoutSerializer
+
+    def post(self, request):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+
+        return Response({"detail": "User logged out"})

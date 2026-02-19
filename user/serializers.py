@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
+from rest_framework_simplejwt.tokens import RefreshToken
 
 # region Mostafa
 User = get_user_model()
@@ -34,33 +35,42 @@ class UserSerializer(serializers.ModelSerializer):
         return instance
 
 class RegisterSerializer(serializers.ModelSerializer):
-    password = serializers.CharField(write_only=True, min_length=8)
-    password_confirmation = serializers.CharField(write_only=True)
-    extra_kwargs = {
-        "password": {"write_only": True}
-    }
-    
+    password_confirmation = serializers.CharField(
+        write_only=True,
+        required=True,
+        style={'input_type': 'password'}
+    )
+
     class Meta:
         model = User
-        fields = ('id', 'username', 'email','phone', 'first_name',
-                  'last_name', 'password','Password_confirmation')
-        
+        fields = [
+            'id',               # اگر می‌خوای
+            'username',         # یا email یا هر چیزی که استفاده می‌کنی
+            'email',
+            'password',
+            'password_confirmation',   # ← این خط رو حتما اضافه کن
+        ]
+
     def validate(self, data):
-        if data["password"] != data["password_confirmation"]:
-            raise serializers.ValidationError("Passwords do not match")
+        if data['password'] != data['password_confirmation']:
+            raise serializers.ValidationError("رمز عبور و تکرار آن یکسان نیستند")
         return data
 
     def create(self, validated_data):
-        validated_data.pop("password_confirmation")
+        validated_data.pop('password_confirmation')   # حذف فیلد اضافی
         user = User.objects.create_user(**validated_data)
-        user.is_active = True
-        user.is_staff = True
-        user.save()
         return user
 
 class UserProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ('id','first_name','last_name','username','phone','email')
+
+class LogoutSerializer(serializers.Serializer):
+    refresh = serializers.CharField()
+
+    def save(self, **kwargs):
+        token = RefreshToken(self.validated_data["refresh"])
+        token.blacklist()
 
 # endregion

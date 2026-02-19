@@ -12,7 +12,7 @@ router.register('product-images', views.ProductImageViewSet, basename='product-i
 router.register('categories', views.CategoryViewSet, basename='categories')
 router.register(r'cart', CartViewSet, basename='cart')
 router.register(r'cart/items', CartItemViewSet, basename='cart-item')
-
+router.register('tickets', TicketViewSet, basename='tickets')
 urlpatterns = [
     path('address/',views.AddressGenericApiView.as_view()),
     path('products/info/',views.product_info),
@@ -25,6 +25,9 @@ urlpatterns = [
     path('change-password/', views.ChangePasswordView.as_view(), name='change_password'),
     path('password-reset/request/', views.PasswordResetRequestView.as_view(), name='password_reset_request'),
     path('password-reset/confirm/', views.PasswordResetConfirmView.as_view(), name='password_reset_confirm'),
+    path('user/panel/', UserPanelAPIView.as_view(), name='user-panel'),
+    path('products/<int:pk>/price/', views.ProductPriceUpdateAPIView.as_view()),
+    path('products/<int:pk>/price-history/', views.ProductPriceHistoryAPIView.as_view())
 ]
 urlpatterns += router.urls
 if settings.DEBUG:

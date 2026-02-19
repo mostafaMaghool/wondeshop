@@ -52,12 +52,11 @@ INSTALLED_APPS = [
 ]
 
 AUTH_USER_MODEL = "user.User"
-ALLOWED_HOSTS = ["*"]
-CSRF_TRUSTED_ORIGINS = [
-    "https://*.liara.run",
-    "https://*.liara.ir"
-]
 
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+]
+CORS_ALLOW_CREDENTIALS = True
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',

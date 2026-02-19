@@ -1,8 +1,8 @@
 from django.conf import settings
 from django.db import models
-
+from user.models import User
 from django.core.validators import MinLengthValidator
-
+from django.db.models import Q
 #region Sara
 from django.utils.text import slugify
 class Category(models.Model):
@@ -27,7 +27,7 @@ class Product(models.Model):
     name = models.CharField(max_length=100)
     description = models.TextField(validators=[MinLengthValidator(10)])
     price = models.PositiveIntegerField(default=0)
-    image_url = models.ImageField(upload_to='product_img/',default='product_img/default.jpg',null=True,blank=True)
+    image_url = models.ImageField(upload_to='product_img/',default='product_img/Asset_64x.png',null=True,blank=True)
     stock = models.PositiveIntegerField(default=0)
     category = models.ForeignKey(
         Category,
@@ -88,28 +88,52 @@ class ProductAttribute(models.Model):
     def __str__(self):
         return f"{self.product.name} - {self.name}: {self.value}"
 
-    
-class Payment(models.Model):
-    user = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        related_name='payments'
-    )
-    payment_date = models.DateTimeField(auto_now_add=True)
-    amount = models.DecimalField(max_digits=15, decimal_places=2)
+class Ticket(models.Model):
 
-    class Method(models.TextChoices):
-        TRANSFER = 'transfer', 'کارت بانکی'
+    class Status(models.TextChoices):
+        OPEN = "open", "Open"
+        ANSWERED = "answered", "Answered"
+        CLOSED = "closed", "Closed"
 
-    method = models.CharField(
-        max_length=15,
-        choices=Method.choices,
-        default=Method.TRANSFER,
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    subject = models.CharField(max_length=255)
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.OPEN
     )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.subject} - {self.status}"
 
 #endregion
     
 # region Kooshan
+    
+class TicketMessage(models.Model):
+
+    ticket = models.ForeignKey(
+        Ticket,
+        on_delete=models.CASCADE,
+        related_name="messages",
+    )
+
+    sender = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="ticket_messages",
+    )
+
+    message = models.TextField()
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at"]
+
 class Order(models.Model):
     class Status(models.TextChoices):
         PENDING = 'pending', 'Pending'
@@ -118,7 +142,7 @@ class Order(models.Model):
         DELIVERED = 'delivered', 'Delivered'
         CANCELLED = 'cancelled', 'Cancelled'
 
-    follow_up_code = models.BigIntegerField(unique=True, editable=False)
+    follow_up_code = models.BigIntegerField(editable=False)
 
     user = models.ForeignKey(to=settings.AUTH_USER_MODEL,
                       on_delete=models.CASCADE,
@@ -140,23 +164,69 @@ class Order(models.Model):
     updated_at = models.DateTimeField(auto_now=True,
                                verbose_name="the time of order being edited")
     shipment_time = models.DateTimeField(null=True, blank=True,verbose_name="the set time ,so that the order be shipped")
+    address_title = models.CharField(max_length=20)
 
-    follow_up_code = models.BigIntegerField()
+    address_state = models.CharField(max_length=45)
+    address_postal_code = models.CharField(max_length=16)
+    address_country = models.CharField(max_length=45)
+
+    full_name = models.CharField(max_length=100, null=True, blank=True)
+    city = models.CharField(max_length=100, null=True, blank=True)
+    state = models.CharField(max_length=100, null=True, blank=True)
+    postal_code = models.CharField(max_length=20, null=True, blank=True)
+    country = models.CharField(max_length=100, null=True, blank=True)
+    phone = models.CharField(max_length=100)
 
     class Meta:
         ordering = ['-created_at']
         verbose_name='order'
     def __str__(self):
-            # گزینه ۱ - ساده و استاندارد
             return f"سفارش #{self.id} - {self.user}"
 
-    # گزینه ۲ - بهتر و کاربردی‌تر (توصیه می‌شود)
     def __str__(self):
         return f"سفارش #{self.follow_up_code} - {self.user.username if self.user else 'بدون کاربر'}"
 
-    # گزینه ۳ - خیلی خوانا برای فارسی
     def __str__(self):
-        return f"سفارش {self.follow_up_code} – کاربر: {self.user.get_full_name() or self.user.username}"   
+        return f"سفارش {self.follow_up_code} – کاربر: {self.user.get_full_name() or self.user.username}" 
+
+class Payment(models.Model):
+
+    class Status(models.TextChoices):
+        PENDING = 'pending', 'Pending'
+        SUCCESS = 'success', 'Success'
+        FAILED = 'failed', 'Failed'
+
+    user = models.ForeignKey(
+            settings.AUTH_USER_MODEL,          # ← این مهمه!
+            on_delete=models.CASCADE,          # یا SET_NULL / PROTECT بسته به نیازت
+            related_name='payments',           # اختیاری ولی خیلی خوبه
+            null=True,                         # اگر بعضی پرداخت‌ها بدون کاربر مجازن
+            blank=True,
+        )
+
+    payment_date = models.DateTimeField(auto_now_add=True)
+
+    amount = models.DecimalField(max_digits=15, decimal_places=2)
+
+    class Method(models.TextChoices):
+        TRANSFER = 'transfer', 'کارت بانکی'
+
+    method = models.CharField(
+        max_length=15,
+        choices=Method.choices,
+        default=Method.TRANSFER,
+    )
+
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.PENDING
+    )
+
+    def __str__(self):
+        return f"Payment for Order #{self.order.id}"
+
+
 class ProductPriceHistory(models.Model):
     product = models.ForeignKey(
         Product,
@@ -178,16 +248,32 @@ class ProductPriceHistory(models.Model):
 #endregion
     
 # region Mostafa
+from decimal import Decimal
+
 class OrderItem(models.Model):
-    order = models.ForeignKey(Order, on_delete=models.CASCADE)
-    product = models.ForeignKey(Product, on_delete=models.CASCADE)
-    quantity = models.PositiveIntegerField()
+    order = models.ForeignKey('Order', on_delete=models.CASCADE, related_name='items')
+    product = models.ForeignKey('Product', on_delete=models.SET_NULL, null=True)
+    quantity = models.PositiveIntegerField(default=1)
+    price = models.DecimalField(
+        max_digits=12, 
+        decimal_places=2, 
+        null=True,          # موقتاً اجازه بده null باشه
+        blank=True
+    )
+
+    def save(self, *args, **kwargs):
+        if self.price is None and self.product is not None:
+            self.price = self.product.price  # قیمت محصول رو در لحظه ذخیره کن
+        super().save(*args, **kwargs)
 
     @property
     def item_subtotal(self):
-        return self.quantity * self.product.price
+        qty = self.quantity or 0
+        price = self.price or Decimal('0.00')
+        return qty * price
+
     def __str__(self):
-        return f"{self.quantity} x {self.product.name} in order {self.order.order_id}"
+        return f"{self.quantity} x {self.product.name if self.product else 'محصول حذف‌شده'} (Order #{self.order.id})"
 
 class Address(models.Model):
 

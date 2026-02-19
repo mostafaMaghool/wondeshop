@@ -5,7 +5,6 @@ from rest_framework.relations import PrimaryKeyRelatedField
 from rest_framework.serializers import ModelSerializer
 from rest_framework import serializers
 from user.serializers import User
-from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
 from rest_framework.relations import PrimaryKeyRelatedField
 from store.models import *
@@ -21,7 +20,7 @@ class ProductImageSerializer(serializers.ModelSerializer):
 class ProductSerializer(serializers.ModelSerializer):
     class Meta:
         model = Product
-        fields = ('name', 'description', 'price', 'image_url', 'stock', 'category','is_active')
+        fields = ('id','name', 'description', 'price', 'image_url', 'stock', 'category','is_active')
         read_only_fields = ['id']
         def validate_price(self, value):
             if value <= 0:
@@ -37,14 +36,86 @@ class ProductInfoSerializer(serializers.Serializer):
 
 class PaymentSerializer(ModelSerializer):
     class Meta:
-        model = Payment
-        fields = ('amount', 'method')
-        read_only_fields = ('payment_date', 'payment_id')
+            model = Payment
+            fields = "__all__"
+            read_only_fields = ('payment_date', 'payment_id','status')
 
 class CategorySerializer(serializers.ModelSerializer):
     class Meta:
         model = Category
         fields = ['id', 'name']
+
+class TicketMessageSerializer(serializers.ModelSerializer):
+
+    sender = serializers.StringRelatedField(read_only=True)
+
+    class Meta:
+            model = TicketMessage
+            fields = [
+                "id",
+                "ticket",
+                "sender",
+                "message",
+                "created_at",
+            ]
+            read_only_fields = ["id", "sender", "created_at"]
+
+
+class TicketSerializer(serializers.ModelSerializer):
+
+    messages = TicketMessageSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Ticket
+        fields = [
+            "id",
+            "subject",
+            "status",
+            "created_at",
+            "updated_at",
+            "messages",
+        ]
+        read_only_fields = [
+            "status",
+            "created_at",
+            "updated_at",
+        ]
+
+
+class UserDashboardSerializer(serializers.Serializer):
+
+    user = serializers.SerializerMethodField()
+    orders = serializers.SerializerMethodField()
+    addresses = serializers.SerializerMethodField()
+    cart = serializers.SerializerMethodField()
+    payments = serializers.SerializerMethodField()
+
+    def get_user(self, obj):
+        user = obj
+        return {
+            "id": user.id,
+            "username": user.username,
+            "email": user.email,
+        }
+
+    def get_orders(self, obj):
+        orders = Order.objects.filter(user=obj)
+        return OrderSerializer(orders, many=True).data
+
+    def get_addresses(self, obj):
+        addresses = Address.objects.filter(user=obj)
+        return AddressSerializer(addresses, many=True).data
+
+    def get_cart(self, obj):
+        try:
+            cart = Cart.objects.get(user=obj)
+            return CartSerializer(cart).data
+        except Cart.DoesNotExist:
+            return None
+
+    def get_payments(self, obj):
+        payments = Payment.objects.filter(user=obj)
+        return PaymentSerializer(payments, many=True).data
 
 #endregion
         
@@ -74,139 +145,99 @@ class AddressSerializer(ModelSerializer):
 
 
 class OrderItemSerializer(ModelSerializer):
-    order = PrimaryKeyRelatedField(
-        queryset=Order.objects.all(),
-        write_only=True,
-        help_text="related order identifier"
-    )
-
-    product = PrimaryKeyRelatedField(
-        queryset=Product.objects.all(),
-        help_text="product identifier"
-    )
-
-    item_subtotal = SerializerMethodField(read_only=True)
-
-    def get_item_subtotal(self, obj):
-        return str(obj.item_subtotal)
-
-    # جزئیات سفارش به صورت خواندنی (اختیاری)
-    # order_detail = SerializerMethodField(read_only=True)
-    #
-    # def get_order_detail(self, obj):
-    #     """نمایش مختصر سفارش؛ می‌توانید فیلدهای دلخواه اضافه کنید."""
-    #     return {
-    #         "id": obj.order.id,
-    #         "status": obj.order.status,
-    #         "created_at": obj.order.created_at,
-    #     }
-    #
-    # line_total = DecimalField(
-    #     max_digits=12, decimal_places=2, read_only=True
-    # )
+    item_subtotal = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = OrderItem
         fields = [
             "id",
             "order",
-            # "order_detail",
+            "product",
             "quantity",
-            "item_subtotal"
-            # "price",
+            "price",
+            "item_subtotal",
         ]
-        read_only_fields = ["id", "item_subtotal"]
+        read_only_fields = ["price", "item_subtotal"]
 
-    def validate_quantity(self, value):
-        if value <= 0:
-            raise ValidationError("Quantity insufficient [must be greater than zero].")
-        return value
+    def get_item_subtotal(self, obj):
+        return obj.item_subtotal
 
-    # def validate_unit_price(self, value):
-    #     if value <= 0:
-    #         raise ValidationError("Unit price must be positive.")
-    #     return value
+    def validate(self, attrs):
+        order = self.instance.order if self.instance else attrs.get("order")
+        if order and order.status != Order.Status.PENDING:
+            raise serializers.ValidationError(
+                "Order items cannot be modified after payment."
+            )
+        return attrs
 import random
 
-
 class OrderSerializer(serializers.ModelSerializer):
-    items = OrderItemSerializer(many=True, write_only=True, required=False)
+
+    def generate_follow_up_code(self):
+        while True:
+            code = random.randint(1000000000, 9999999999)
+            if not Order.objects.filter(follow_up_code=code).exists():
+                return code
+
+    def create(self, validated_data):
+        items_data = validated_data.pop("items")
+        user = self.context["request"].user
+
+        order = Order.objects.create(
+            user=user,
+            follow_up_code=self.generate_follow_up_code(),
+            **validated_data
+        )
+
+        total = 0
+
+        for item_data in items_data:
+            product = item_data["product"]
+            quantity = item_data["quantity"]
+
+            OrderItem.objects.create(
+                order=order,
+                product=product,
+                quantity=quantity,
+                price=product.price
+            )
+
+            total += product.price * quantity
+
+        order.total_amount = total
+        order.save()
+
+        return order
+    items = OrderItemSerializer(many=True, read_only=True)
+    total_amount = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
+    # created_at = serializers.DateTimeField(read_only=True)
+    # updated_at = serializers.DateTimeField(read_only=True)
 
     class Meta:
         model = Order
         fields = [
+            # "user",
             "id",
+            "follow_up_code",
             "user",
             "status",
             "total_amount",
             "created_at",
             "updated_at",
             "shipment_time",
-            "follow_up_code",
+            "full_name",
+            "phone",
+            "address_postal_code",
             "items",
         ]
-        read_only_fields = [
-            "id",
-            "user",
-            "total_amount",
-            "created_at",
-            "updated_at",
-            "follow_up_code",
-        ]
+        read_only_fields = ["id", "status","total_amount"]
 
-    def create(self, validated_data):
-        items_data = validated_data.pop('items', [])
-        user = self.context['request'].user
-
-        # تولید کد پیگیری
-        follow_up_code = random.randint(1000000000, 9999999999)
-
-        order = Order.objects.create(
-            user=user,
-            follow_up_code=follow_up_code,
-            **validated_data
-        )
-
-        total = 0
-        for item_data in items_data:
-            product = item_data.get('product')
-            quantity = item_data.get('quantity')
-
-            if not product:
-                raise serializers.ValidationError("فیلد product در آیتم‌ها الزامی است")
-            if not isinstance(quantity, int) or quantity < 1:
-                raise serializers.ValidationError("quantity باید عدد صحیح مثبت باشد")
-
-            if product.stock < quantity:
-                raise serializers.ValidationError(f"موجودی محصول {product.name} کافی نیست")
-
-            OrderItem.objects.create(
-                order=order,
-                product=product,
-                quantity=quantity
-            )
-
-            total += product.price * quantity
-
-        order.total_amount = total
-        order.save(update_fields=['total_amount'])
-
-        return order
-
-    def to_representation(self, instance):
-        representation = super().to_representation(instance)
-        representation['items'] = OrderItemSerializer(
-            instance.orderitem_set.all(), many=True
-        ).data
-        return representation
-
-class LogoutSerializer(serializers.Serializer):
-    refresh = serializers.CharField()
-
-    def save(self, **kwargs):
-        token = RefreshToken(self.validated_data["refresh"])
-        token.blacklist()
-
+    def get_items(self, obj):
+        # از related_name مدل OrderItem استفاده می‌کنیم
+        # فرض کنیم در مدل OrderItem:
+        # order = models.ForeignKey(Order, related_name="items", ...)
+        order_items = obj.items.all()
+        return OrderItemSerializer(order_items, many=True).data
 
 class ChangePasswordSerializer(serializers.Serializer):
     old_password = serializers.CharField(write_only=True)
