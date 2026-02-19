@@ -5,6 +5,8 @@ from django.utils import timezone
 from django.utils.text import slugify
 from rest_framework.exceptions import ValidationError
 
+from user.models import User
+
 
 # from user.services.inventory import deduct_stock_for_order
 
@@ -241,6 +243,48 @@ class ProductPriceHistory(models.Model):
             models.Index(fields=["product", "valid_from"]),
             models.Index(fields=["product", "valid_to"]),
         ]
+
+
+class Ticket(models.Model):
+
+    class Status(models.TextChoices):
+        OPEN = "open", "Open"
+        ANSWERED = "answered", "Answered"
+        CLOSED = "closed", "Closed"
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="tickets")
+    subject = models.CharField(max_length=255)
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.OPEN,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+
+class TicketMessage(models.Model):
+
+    ticket = models.ForeignKey(
+        Ticket,
+        on_delete=models.CASCADE,
+        related_name="messages",
+    )
+
+    sender = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="ticket_messages",
+    )
+
+    message = models.TextField()
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at"]
+
+
 #endregion
     
 # region Mostafa

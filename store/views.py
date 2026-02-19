@@ -9,13 +9,13 @@ from rest_framework.generics import (
     GenericAPIView,
     ListAPIView, get_object_or_404
 )
-from rest_framework.viewsets import ReadOnlyModelViewSet
+from rest_framework.viewsets import ReadOnlyModelViewSet, ModelViewSet
 
 from store.services.payments.gateway import PaymentGatewayService
 from store.services.payments.verification import finalize_payment
 from store.services.recommendation import get_hybrid_recommendations
 from user.api.admin_models import AuditLog
-from user.permissions import IsSuperOrSiteAdmin
+from user.permissions import IsSuperOrSiteAdmin, IsTicketOwnerOrAdmin
 from user.services.audit import log_snapshot_change
 from user.services.exceptions import InsufficientStockError
 from user.services.fake_gateway import FakePaymentGateway
@@ -470,4 +470,82 @@ class CartItemViewSet(viewsets.ModelViewSet):
                                    " cannot remove any item")
 
         instance.delete()
+
+
+class TicketViewSet(ModelViewSet):
+
+    serializer_class = TicketSerializer
+    permission_classes = [IsTicketOwnerOrAdmin]
+
+    def get_queryset(self):
+
+        if self.request.user.is_staff:
+            return Ticket.objects.all()
+
+        return Ticket.objects.filter(user=self.request.user)
+
+    def perform_create(self, serializer):
+
+        # Only users (not admins) can create tickets - RULES!
+        if self.request.user.is_staff:
+            raise PermissionDenied("Admins cannot create tickets.")
+
+        serializer.save(user=self.request.user)
+
+    @action(detail=True, methods=["post"])
+    def close(self, request, pk=None):
+
+        ticket = self.get_object()
+
+        if not request.user.is_staff:
+            raise PermissionDenied("Only admins can close tickets.")
+
+        ticket.status = Ticket.Status.CLOSED
+        ticket.save()
+
+        return Response({"detail": "Ticket closed."})
+
+
+
+class TicketMessageCreateAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, ticket_id):
+
+        ticket = get_object_or_404(Ticket, id=ticket_id)
+
+        # If closed → no replies allowed
+        if ticket.status == Ticket.Status.CLOSED:
+            return Response(
+                {"detail": "Ticket is closed."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # User rules
+        if not request.user.is_staff:
+            if ticket.user != request.user:
+                raise PermissionDenied("You cannot reply to this ticket.")
+
+        # Create message
+        message = TicketMessage.objects.create(
+            ticket=ticket,
+            sender=request.user,
+            message=request.data.get("message"),
+        )
+
+        # Auto-update status logic
+        if request.user.is_staff:
+            ticket.status = Ticket.Status.ANSWERED
+        else:
+            ticket.status = Ticket.Status.OPEN
+
+        ticket.save()
+
+        serializer = TicketMessageSerializer(message)
+
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
+
+
 

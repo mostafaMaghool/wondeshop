@@ -272,6 +272,44 @@ class ProductPriceHistorySerializer(serializers.ModelSerializer):
         model = ProductPriceHistory
         fields = ["price", "valid_from", "valid_to"]
 
+
+class TicketMessageSerializer(serializers.ModelSerializer):
+
+    sender = serializers.StringRelatedField(read_only=True)
+
+    class Meta:
+            model = TicketMessage
+            fields = [
+                "id",
+                "ticket",
+                "sender",
+                "message",
+                "created_at",
+            ]
+            read_only_fields = ["id", "sender", "created_at"]
+
+
+class TicketSerializer(serializers.ModelSerializer):
+
+    messages = TicketMessageSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Ticket
+        fields = [
+            "id",
+            "subject",
+            "status",
+            "created_at",
+            "updated_at",
+            "messages",
+        ]
+        read_only_fields = [
+            "status",
+            "created_at",
+            "updated_at",
+        ]
+
+
 #endregion
         
 # ======================================================
