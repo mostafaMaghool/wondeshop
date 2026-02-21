@@ -2,8 +2,8 @@ from django.http import request
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.generics import GenericAPIView
-from rest_framework.permissions import IsAdminUser
 from rest_framework.response import Response
+from rest_framework.status import HTTP_200_OK
 from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet, ReadOnlyModelViewSet
 
@@ -13,15 +13,45 @@ from user.api.admin_user_serializer import UserAdminSerializer, ArticleSerialize
     AuditLogSerializer, IconCategorySerializer
 from user.models import User
 from user.permissions import IsSuperOrSiteAdmin, IsSuperAdmin
-from user.services.analytics import get_admin_kpis
+from user.services.monitoring import get_admin_dashboard_metrics, get_revenue_trend, get_orders_trend
 from user.services.ordering import change_order_status
 
 
 class AdminDashboardAPIView(APIView):
-    permission_classes = [IsAdminUser]
+    permission_classes = [IsSuperOrSiteAdmin]
 
     def get(self, request):
-        data = get_admin_kpis()
+        range_type = request.query_params.get("range")
+        start = request.query_params.get("start")
+        end = request.query_params.get("end")
+
+        data = get_admin_dashboard_metrics(range_type, start, end)
+        return Response(data, status=HTTP_200_OK)
+
+
+class RevenueTrendAPIView(APIView):
+
+    permission_classes = [IsSuperOrSiteAdmin]
+
+    def get(self, request):
+
+        range_type = request.query_params.get("range", "week")
+
+        data = get_revenue_trend(range_type)
+
+        return Response(data)
+
+
+class OrdersTrendAPIView(APIView):
+
+    permission_classes = [IsSuperOrSiteAdmin]
+
+    def get(self, request):
+
+        range_type = request.query_params.get("range", "week")
+
+        data = get_orders_trend(range_type)
+
         return Response(data)
 
 

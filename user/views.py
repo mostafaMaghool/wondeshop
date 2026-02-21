@@ -67,7 +67,7 @@ class LoginAPIView(TokenObtainPairView):
         return super().post(request, *args, **kwargs)
 
 
-class UserProfleView(mixins.CreateModelMixin,generics.GenericAPIView):
+class UserProfileView(mixins.CreateModelMixin, generics.GenericAPIView):
     serializer_class = UserProfileSerializer
     permission_classes = [permissions.IsAuthenticatedOrReadOnly]
 
