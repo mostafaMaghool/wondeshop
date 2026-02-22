@@ -48,7 +48,7 @@ INSTALLED_APPS = [
     'user',
     'django_filters',
     'rest_framework_simplejwt.token_blacklist',
-
+    'corsheaders',
 ]
 
 AUTH_USER_MODEL = "user.User"
@@ -59,6 +59,8 @@ CORS_ALLOWED_ORIGINS = [
 CORS_ALLOW_CREDENTIALS = True
 
 MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware',
+    "django.middleware.common.CommonMiddleware",
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -67,6 +69,15 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
+# فقط دامنه‌های مشخص اجازه دارند
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",     # Next.js در توسعه
+    "http://127.0.0.1:3000",
+    "https://your-frontend-domain.com", 
+    "https://www.your-frontend-domain.com",
+]
+
+CORS_ALLOW_CREDENTIALS = True
 
 TEMPLATES = [
     {
