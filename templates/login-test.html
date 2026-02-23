@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="fa">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>فروشگاه امن با JWT Cookie</title>
+<style>
+body { font-family:sans-serif; background:#f5f5f5; margin:0; }
+.container{ max-width:1000px; margin:auto; padding:20px; }
+.card{ background:white; padding:20px; border-radius:8px; box-shadow:0 0 10px rgba(0,0,0,.08); margin-bottom:20px; }
+input{ width:100%; padding:10px; margin-bottom:10px; border-radius:4px; border:1px solid #ccc; }
+button{ padding:8px 14px; border:none; border-radius:4px; cursor:pointer; }
+.btn-primary{ background:black; color:white; }
+.btn-danger{ background:crimson; color:white; }
+.btn-gray{ background:#ddd; }
+.header{ display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; }
+.product{ display:grid; grid-template-columns:100px 1fr auto; gap:15px; align-items:center; border-bottom:1px solid #eee; padding:12px 0; }
+.product img{ width:90px; height:90px; object-fit:cover; border-radius:6px; background:#eee; }
+.cart-item{ display:flex; justify-content:space-between; padding:6px 0; }
+.hidden{ display:none; }
+.small{ color:#666; font-size:13px; }
+.link{ color:blue; cursor:pointer; margin-top:10px; display:inline-block; }
+.success{ color:green; font-size:14px; margin-top:10px; }
+.error{ color:red; font-size:14px; margin-top:10px; }
+</style>
+</head>
+<body>
+
+<div class="container">
+
+<!-- LOGIN -->
+<div id="loginPage" class="card">
+  <h2>ورود</h2>
+  <input type="text" id="login_username" placeholder="Username">
+  <input type="password" id="login_password" placeholder="Password">
+  <button class="btn-primary" onclick="login()">ورود</button>
+  <div class="link" onclick="showRegister()">ثبت نام ندارید؟ ثبت نام</div>
+  <pre id="loginResponse"></pre>
+</div>
+
+<!-- REGISTER -->
+<div id="registerPage" class="card hidden">
+  <h2>ثبت نام</h2>
+  <input type="text" id="reg_username" placeholder="Username">
+  <input type="email" id="reg_email" placeholder="Email">
+  <input type="password" id="reg_password" placeholder="Password">
+  <input type="password" id="reg_password2" placeholder="Password confirmation">
+  <button class="btn-primary" onclick="register()">ثبت نام</button>
+  <div class="link" onclick="showLogin()">قبلا ثبت نام کردید؟ ورود</div>
+  <pre id="registerResponse"></pre>
+</div>
+
+<!-- SHOP -->
+<div id="shopPage" class="hidden">
+
+  <div class="header">
+    <h2>فروشگاه</h2>
+    <button class="btn-gray" onclick="logout()">خروج</button>
+  </div>
+
+  <!-- PROFILE -->
+  <div class="card">
+    <h3>پروفایل کاربر</h3>
+    <div id="profile">در حال دریافت...</div>
+  </div>
+
+  <!-- PRODUCTS -->
+  <div class="card">
+    <h3>محصولات</h3>
+    <div id="products">در حال دریافت...</div>
+  </div>
+
+  <!-- CART -->
+  <div class="card">
+    <h3>سبد خرید</h3>
+    <div id="cart">در حال دریافت...</div>
+    <hr>
+    <strong id="total"></strong>
+  </div>
+
+</div>
+
+</div>
+
+<script>
+const API = {
+  login:"http://127.0.0.1:8000/login/",
+  register:"http://127.0.0.1:8000/register/",
+  logout:"http://127.0.0.1:8000/logout/",
+  profile:"http://127.0.0.1:8000/profile/",
+  products:"http://127.0.0.1:8000/products/",
+  cart: "http://127.0.0.1:8000/cart/"};
+
+let products = [];
+let cart = [];
+
+// ================= PAGE SWITCH =================
+
+function getCookie(name) {
+  let cookieValue = null;
+  if (document.cookie && document.cookie !== '') {
+    const cookies = document.cookie.split(';');
+    for (let i = 0; i < cookies.length; i++) {
+      const cookie = cookies[i].trim();
+      if (cookie.substring(0, name.length + 1) === (name + '=')) {
+        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+        break;
+      }
+    }
+  }
+  return cookieValue;
+}
+function showRegister(){
+  document.getElementById('loginPage').classList.add('hidden');
+  document.getElementById('registerPage').classList.remove('hidden');
+}
+function showLogin(){
+  document.getElementById('registerPage').classList.add('hidden');
+  document.getElementById('loginPage').classList.remove('hidden');
+}
+function showShop(){
+  document.getElementById('loginPage').classList.add('hidden');
+  document.getElementById('registerPage').classList.add('hidden');
+  document.getElementById('shopPage').classList.remove('hidden');
+}
+
+// ================= REGISTER =================
+async function register(){
+  const username = document.getElementById('reg_username').value;
+  const email = document.getElementById('reg_email').value;
+  const password = document.getElementById('reg_password').value;
+  const password2 = document.getElementById('reg_password2').value;
+  const out = document.getElementById('registerResponse');
+  out.innerHTML="";
+
+  try{
+    const res = await fetch(API.register,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      credentials: 'include',
+      body: JSON.stringify({
+        username: username,
+        email: email,
+        password: password,
+        password_confirmation: password2
+      })
+    });
+    const data = await res.json();
+    if(res.ok){
+      out.innerHTML="<div class='success'>ثبت نام موفق بود ✅ حالا وارد شوید</div>";
+      showLogin();
+    }else{
+      let errors="";
+      for(let key in data) errors += `<div>${key}: ${data[key]}</div>`;
+      out.innerHTML=`<div class='error'>${errors}</div>`;
+    }
+  }catch{
+    out.innerHTML="<div class='error'>اتصال به سرور برقرار نشد</div>";
+  }
+}
+
+// ================= LOGIN =================
+async function login(){
+  const username = document.getElementById('login_username').value;
+  const password = document.getElementById('login_password').value;
+  const out = document.getElementById('loginResponse');
+  out.innerHTML="";
+
+  try{
+    const res = await fetch(API.login,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      credentials:'include',
+      body: JSON.stringify({username,password})
+    });
+    const data = await res.json();
+    out.textContent = JSON.stringify(data,null,2);
+
+    if(!res.ok){ 
+      alert('ورود ناموفق'); 
+      return;
+    }
+
+    // ✅ بعد login، fetch واقعی پروفایل
+    const profileRes = await fetch(API.profile,{credentials:'include'});
+    if(!profileRes.ok) throw new Error("Profile fetch failed");
+    const user = await profileRes.json();
+
+    showShop();
+    renderProfile(user); // پروفایل درست نمایش داده میشه
+    await loadProducts();
+    await loadCart();
+
+  }catch(err){
+    out.innerHTML="<div class='error'>خطا در اتصال به سرور یا دریافت پروفایل</div>";
+    console.error(err);
+  }
+}
+
+// ================= PROFILE =================
+function renderProfile(user){
+  const el = document.getElementById('profile');
+  el.innerHTML = `<p><strong>نام کاربری:</strong> ${user.username||'-'}</p>
+                  <p><strong>شماره تلفن:</strong> ${user.phone||'-'}</p>
+                  <p><strong>شناسه:</strong> ${user.id??'-'}</p>`;
+}
+
+// ================= PRODUCTS =================
+async function loadProducts(){
+  const el = document.getElementById('products');
+  try{
+    const res = await fetch(API.products);
+    if(!res.ok) throw new Error();
+    const data = await res.json();
+    products = data.filter(p=>p.is_active);
+    renderProducts();
+  }catch{ el.innerHTML='خطا در دریافت محصولات';}
+}
+function renderProducts(){
+  const el = document.getElementById('products');
+  el.innerHTML='';
+  if(!products.length){ el.innerHTML='محصولی وجود ندارد'; return;}
+  products.forEach((p,index)=>{
+    const img = p.image_url? `<img src="${p.image_url}"/>` : `<img src="http://127.0.0.1:8000/media/default.jpg"/>`;
+    const div = document.createElement('div');
+    div.className='product';
+    div.innerHTML=`${img}
+      <div>
+        <div><strong>${p.name}</strong></div>
+        <div class='small'>${p.description||''}</div>
+        <div class='small'>موجودی: ${p.stock}</div>
+        <div><strong>$${p.price}</strong></div>
+      </div>
+      <button class='btn-primary' onclick='addToCart(${index})'>افزودن</button>`;
+    el.appendChild(div);
+  });
+}
+
+// ================= CART =================
+async function loadCart(){
+  const el = document.getElementById('cart');
+  try{
+    const res = await fetch(API.cart,{credentials: 'include'});
+    if(!res.ok) throw new Error();
+    cart = await res.json();
+    renderCart();
+  }catch{ el.innerHTML='خطا در دریافت سبد';}
+}
+function renderCart(){
+  const el = document.getElementById('cart');
+  el.innerHTML='';
+  let total = 0;
+  if(!cart.length){ el.innerHTML='سبد خرید خالی است'; return;}
+  cart.forEach((item,index)=>{
+    total += item.price*item.quantity;
+    const div = document.createElement('div');
+    div.className='cart-item';
+    div.innerHTML=`<span>${item.product_name || item.product} x ${item.quantity}</span>
+                   <span>${item.price*item.quantity}$</span>
+                   <button class='btn-danger' onclick='removeFromCart(${index})'>حذف</button>`;
+    el.appendChild(div);
+  });
+  document.getElementById('total').textContent = "مجموع: " + total + "$";
+}
+async function addToCart(productId, quantity = 1) {
+  const csrftoken = getCookie("csrftoken");
+
+  try {
+    const res = await fetch(API.cart, {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": csrftoken
+      },
+      body: JSON.stringify({
+        product_id: productId,
+        quantity: quantity
+      })
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      alert("خطا در افزودن به سبد خرید");
+      console.log(data);
+      return;
+    }
+
+    alert("محصول به سبد خرید اضافه شد ✅");
+  } catch (err) {
+    console.error(err);
+    alert("خطا در اتصال به سرور");
+  }
+}
+
+async function removeFromCart(index){
+  const item = cart[index];
+  if(!item?.id){ alert('id آیتم سبد وجود ندارد'); return;}
+  try{
+    const res = await fetch(API.cart+item.id+'/',{method:'DELETE',credentials:'include'});
+    if(!res.ok) throw new Error();
+    await loadCart();
+  }catch{ alert('خطا در حذف');}
+}
+
+// ================= LOGOUT =================
+async function logout(){
+  try{
+    await fetch(API.logout,{method:'POST',credentials:'include'});
+  }catch{}
+  showLogin();
+}
+
+// ================= AUTO LOGIN =================
+(async ()=>{
+  try{
+    const res = await fetch(API.profile,{credentials:'include'});
+    if(res.ok){
+      const user = await res.json();
+      showShop();
+      renderProfile(user);
+      await loadProducts();
+      await loadCart();
+    } else {
+      showLogin();
+    }
+  }catch{
+    showLogin();
+  }
+})();
+</script>
+
+</body>
+</html>

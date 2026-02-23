@@ -53,11 +53,6 @@ INSTALLED_APPS = [
 
 AUTH_USER_MODEL = "user.User"
 
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",
-]
-CORS_ALLOW_CREDENTIALS = True
-
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     "django.middleware.common.CommonMiddleware",
@@ -69,15 +64,32 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
-# فقط دامنه‌های مشخص اجازه دارند
+
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",     # Next.js در توسعه
-    "http://127.0.0.1:3000",
-    "https://your-frontend-domain.com", 
-    "https://www.your-frontend-domain.com",
+    "http://localhost:5500",
+    "http://127.0.0.1:5500",
+    # اگر بعداً روی Vercel رفتی → آدرس واقعی رو اضافه کن
 ]
 
-CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOW_CREDENTIALS = True          # اگر از کوکی/توکن/Authentication استفاده می‌کنی → حتماً True
+
+# اختیاری اما مفید
+CORS_ALLOW_METHODS = [
+    "GET",
+    "POST",
+    "PUT",
+    "PATCH",
+    "DELETE",
+    "OPTIONS",
+]
+
+CORS_ALLOW_HEADERS = [
+    "accept",
+    "authorization",
+    "content-type",
+    "x-csrftoken",
+    "x-requested-with",
+]
 
 TEMPLATES = [
     {

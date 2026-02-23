@@ -6,6 +6,11 @@ from rest_framework.routers import DefaultRouter
 from django.conf import settings
 from django.conf.urls.static import static
 
+
+from store.views import CreatePaymentAPIView
+from store.views import NowPaymentsWebhookAPIView
+
+
 router = DefaultRouter()
 router.register('products', views.ProductView, basename='products')
 router.register('product-images', views.ProductImageViewSet, basename='product-images')
@@ -14,6 +19,8 @@ router.register(r'cart', CartViewSet, basename='cart')
 router.register(r'cart/items', CartItemViewSet, basename='cart-item')
 router.register('tickets', TicketViewSet, basename='tickets')
 urlpatterns = [
+    path("orders/<int:order_id>/pay/", CreatePaymentAPIView.as_view()),
+    path("webhook/nowpayments/", NowPaymentsWebhookAPIView.as_view()),
     path('address/',views.AddressGenericApiView.as_view()),
     path('products/info/',views.product_info),
     path('api/schema/',SpectacularAPIView.as_view(),name='schema'),

@@ -19,6 +19,44 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework import status
 from rest_framework.decorators import api_view, action
 
+from rest_framework import generics, permissions
+
+# store/views/payment_views.py
+
+from store.services.payment_service import create_crypto_payment
+
+class CreatePaymentAPIView(generics.GenericAPIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, order_id):
+        payment = create_crypto_payment(order_id, request.user)
+
+        return Response({
+            "payment_id": payment.payment_id,
+            "pay_address": payment.pay_address,
+            "pay_amount": payment.pay_amount,
+            "pay_currency": payment.pay_currency
+        })
+
+
+# store/views/webhook_views.py
+
+class NowPaymentsWebhookAPIView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        payment_id = request.data.get("payment_id")
+        status = request.data.get("payment_status")
+
+        payment = Payment.objects.get(payment_id=payment_id)
+        payment.status = status
+        payment.save()
+
+        if status == "finished":
+            payment.mark_success()
+
+        return Response({"detail": "ok"})
+
 # region Sara
 class ProductView(ModelViewSet):
     queryset = Product.objects.all()

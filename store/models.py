@@ -44,6 +44,11 @@ class Product(models.Model):
     def __str__(self):
         return self.name
 
+class Inventory(models.Model):
+    product = models.OneToOneField(Product, on_delete=models.CASCADE)
+    total_stock = models.PositiveIntegerField()
+    reserved_stock = models.PositiveIntegerField(default=0)
+
 class ProductImage(models.Model):
     product = models.ForeignKey(
         Product,
@@ -177,14 +182,14 @@ class Order(models.Model):
     country = models.CharField(max_length=100, null=True, blank=True)
     phone = models.CharField(max_length=100)
 
+    def calculate_total(self):
+        total = sum(item.item_subtotal for item in self.items.all())
+        self.total_amount = total
+        self.save()
+
     class Meta:
         ordering = ['-created_at']
         verbose_name='order'
-    def __str__(self):
-            return f"سفارش #{self.id} - {self.user}"
-
-    def __str__(self):
-        return f"سفارش #{self.follow_up_code} - {self.user.username if self.user else 'بدون کاربر'}"
 
     def __str__(self):
         return f"سفارش {self.follow_up_code} – کاربر: {self.user.get_full_name() or self.user.username}" 
@@ -192,40 +197,54 @@ class Order(models.Model):
 class Payment(models.Model):
 
     class Status(models.TextChoices):
-        PENDING = 'pending', 'Pending'
-        SUCCESS = 'success', 'Success'
-        FAILED = 'failed', 'Failed'
+        WAITING = "waiting", "Waiting"
+        CONFIRMING = "confirming", "Confirming"
+        FINISHED = "finished", "Finished"
+        FAILED = "failed", "Failed"
+        EXPIRED = "expired", "Expired"
+
+    order = models.OneToOneField(
+        Order,
+        on_delete=models.CASCADE,
+        related_name="payment"
+    )
 
     user = models.ForeignKey(
-            settings.AUTH_USER_MODEL,          # ← این مهمه!
-            on_delete=models.CASCADE,          # یا SET_NULL / PROTECT بسته به نیازت
-            related_name='payments',           # اختیاری ولی خیلی خوبه
-            null=True,                         # اگر بعضی پرداخت‌ها بدون کاربر مجازن
-            blank=True,
-        )
-
-    payment_date = models.DateTimeField(auto_now_add=True)
-
-    amount = models.DecimalField(max_digits=15, decimal_places=2)
-
-    class Method(models.TextChoices):
-        TRANSFER = 'transfer', 'کارت بانکی'
-
-    method = models.CharField(
-        max_length=15,
-        choices=Method.choices,
-        default=Method.TRANSFER,
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="payments"
     )
+
+    payment_id = models.CharField(max_length=255, blank=True)
+    pay_address = models.CharField(max_length=255, blank=True)
+    pay_currency = models.CharField(max_length=20, blank=True)
+
+    price_amount = models.DecimalField(max_digits=12, decimal_places=2)
+    pay_amount = models.DecimalField(
+        max_digits=18,
+        decimal_places=8,
+        null=True,
+        blank=True
+    )
+
+    tx_hash = models.CharField(max_length=255, blank=True)
 
     status = models.CharField(
         max_length=20,
         choices=Status.choices,
-        default=Status.PENDING
+        default=Status.WAITING
     )
 
-    def __str__(self):
-        return f"Payment for Order #{self.order.id}"
+    created_at = models.DateTimeField(auto_now_add=True)
 
+    def mark_success(self):
+        self.status = self.Status.FINISHED
+        self.save(update_fields=["status"])
+        self.order.status = Order.Status.PAID
+        self.order.save(update_fields=["status"])
+
+    def __str__(self):
+        return f"Payment for Order #{self.order.id}"  
 
 class ProductPriceHistory(models.Model):
     product = models.ForeignKey(
@@ -266,6 +285,7 @@ class OrderItem(models.Model):
             self.price = self.product.price  # قیمت محصول رو در لحظه ذخیره کن
         super().save(*args, **kwargs)
 
+
     @property
     def item_subtotal(self):
         qty = self.quantity or 0
@@ -275,55 +295,110 @@ class OrderItem(models.Model):
     def __str__(self):
         return f"{self.quantity} x {self.product.name if self.product else 'محصول حذف‌شده'} (Order #{self.order.id})"
 
+from django.db import models
+from django.conf import settings
+from django.db.models import Q
+
 class Address(models.Model):
 
     user = models.ForeignKey(
-        to=settings.AUTH_USER_MODEL,
+        settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name='addresses',
-        db_index=True,
-        verbose_name='user'
+        db_index=True
     )
-    title = models.CharField(max_length=20, verbose_name='the address title (like «home»)')
-    city = models.CharField(max_length=40, verbose_name='city/town')
-    state = models.CharField(max_length=45, verbose_name='state/province')
-    postal_code = models.CharField(max_length=16, verbose_name='zip code/postal code')
-    country = models.CharField(max_length=45, verbose_name='country')
-    is_default = models.BooleanField(default=False, verbose_name='default address')
-    created_at = models.DateTimeField(auto_now_add=True, verbose_name='creation time')
-    updated_at = models.DateTimeField(auto_now=True, verbose_name='update time')
+
+    title = models.CharField(max_length=50)
+    full_name = models.CharField(max_length=120)
+    phone = models.CharField(max_length=20)
+
+    city = models.CharField(max_length=100)
+    state = models.CharField(max_length=100)
+    postal_code = models.CharField(max_length=20)
+    country = models.CharField(max_length=100)
+
+    is_default = models.BooleanField(default=False)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ['-is_default', '-created_at']
-        verbose_name = 'address'
-        unique_together = (('user', 'is_default'),)  # only one default for every user
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user'],
+                condition=Q(is_default=True),
+                name='unique_default_address_per_user'
+            )
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.is_default:
+            Address.objects.filter(
+                user=self.user,
+                is_default=True
+            ).update(is_default=False)
+        super().save(*args, **kwargs)
 
     def __str__(self):
-        return f'{self.title} - {self.city}, {self.country}'
-    
+        return f"{self.title} - {self.city}"
+
+
 class Cart(models.Model):
-    user = models.OneToOneField(settings.AUTH_USER_MODEL,
-                                on_delete=models.CASCADE,
-                                related_name='cart')
-    created_at = models.DateTimeField(auto_now_add=True)
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='cart'
+    )
+
     is_locked = models.BooleanField(default=False)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
     def total_price(self):
         return sum(
-            item.quantity * item.product.price
+            item.quantity * item.price
             for item in self.items.all()
-        )
+        ) or Decimal('0.00')
+
     def __str__(self):
-        return f'Cart({self.user.username})'
-    
+        return f"Cart({self.user.username})"    
+
 class CartItem(models.Model):
-    cart = models.ForeignKey(Cart, on_delete=models.CASCADE,
-                             related_name='items')
-    product = models.ForeignKey('Product', on_delete=models.PROTECT)
-    quantity = models.PositiveIntegerField()
+
+    cart = models.ForeignKey(
+        Cart,
+        on_delete=models.CASCADE,
+        related_name='items'
+    )
+
+    product = models.ForeignKey(
+        Product,
+        on_delete=models.PROTECT
+    )
+
+    quantity = models.PositiveIntegerField(default=1)
+
+    price = models.DecimalField(
+        max_digits=12,
+        decimal_places=2
+    )
 
     class Meta:
         unique_together = ('cart', 'product')
 
+    def save(self, *args, **kwargs):
+        if not self.price:
+            self.price = self.product.price
+        super().save(*args, **kwargs)
+
+    @property
+    def subtotal(self):
+        return self.quantity * self.price
+
     def __str__(self):
-        return f'{self.product.name} x {self.quantity}'
+        return f"{self.product.name} x {self.quantity}"
+
 #endregion
