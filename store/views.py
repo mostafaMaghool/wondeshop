@@ -444,14 +444,17 @@ class CartItemViewSet(viewsets.ModelViewSet):
         except Cart.DoesNotExist:
             return CartItem.objects.none()
 
-    def perform_create(self, serializer):
-        cart, _ = Cart.objects.get_or_create(user=self.request.user)
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        cart, created = Cart.objects.get_or_create(user=self.request.user)
+        context['cart'] = cart
+        return context
 
-        if cart.is_locked():
+    def perform_create(self, serializer):
+        if self.get_serializer_context()['cart'].is_locked():
             raise PermissionDenied("Cart is locked after payment,"
                                    " cannot add any item")
-
-        serializer.save(cart=cart)
+        serializer.save()
 
     def perform_update(self, serializer):
         cart = Cart.objects.get(user=self.request.user)
@@ -470,6 +473,17 @@ class CartItemViewSet(viewsets.ModelViewSet):
                                    " cannot remove any item")
 
         instance.delete()
+
+
+class CartViewSet(ReadOnlyModelViewSet):
+    serializer_class = CartSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return Cart.objects.filter(user=self.request.user)
+
+    # def perform_create(self, serializer):
+    #     serializer.save(user=self.request.user)
 
 
 class TicketViewSet(ModelViewSet):

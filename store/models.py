@@ -20,7 +20,7 @@ class Category(models.Model):
     class Meta:
         verbose_name = 'category'
         verbose_name_plural = 'categories'
-        indexes = models.Index(fields = ["name"])
+        indexes = [models.Index(fields = ["name"])]
 
     def save(self, *args, **kwargs):
         if not self.slug:
@@ -171,11 +171,11 @@ class Order(models.Model):
                                verbose_name="the time of order being edited")
     shipment_time = models.DateTimeField(null=True, blank=True,verbose_name="the set time ,so that the order be shipped")
 
-    shipping_full_name = models.CharField(max_length=80)
-    shipping_phone = models.CharField(max_length=24)
-    shipping_address = models.TextField()
-    shipping_city = models.CharField(max_length=128)
-    shipping_postal_code = models.CharField(max_length=20)
+    shipping_full_name = models.CharField(max_length=80, null=True, blank=True)
+    shipping_phone = models.CharField(max_length=24, null=True, blank=True)
+    shipping_address = models.TextField(null=True, blank=True)
+    shipping_city = models.CharField(max_length=128, null=True, blank=True)
+    shipping_postal_code = models.CharField(max_length=20, null=True, blank=True)
 
     is_paid = models.BooleanField(default=False)
 

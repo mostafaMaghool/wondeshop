@@ -6,10 +6,12 @@ from django.conf.urls.static import static
 from . import views
 
 router = DefaultRouter()
-router.register("products", views.ProductViewSet, basename="products")
-router.register("product-images", views.ProductImageViewSet, basename="product-images")
-router.register("categories", views.CategoryViewSet, basename="categories")
+router.register("products", views.ProductViewSet, basename= "products")
+router.register("product-images", views.ProductImageViewSet, basename= "product-images")
+router.register("categories", views.CategoryViewSet, basename= "categories")
 router.register(r"admin/products/search", views.AdminProductSearchViewSet, basename= "admin-product-search")
+router.register(r'cart-items', views.CartItemViewSet, basename="cart-items")
+router.register(r'cart', views.CartViewSet, basename="cart")
 
 urlpatterns = [
     path("products/info/", views.product_info),

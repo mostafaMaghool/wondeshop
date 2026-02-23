@@ -1,5 +1,6 @@
 from django.core.exceptions import ValidationError
 from django.core.validators import RegexValidator
+from kombu.utils import retry_over_time
 from rest_framework.fields import SerializerMethodField, DecimalField, DateTimeField, CharField
 from rest_framework.relations import PrimaryKeyRelatedField
 from rest_framework.serializers import ModelSerializer
@@ -317,14 +318,36 @@ class TicketSerializer(serializers.ModelSerializer):
 # ======================================================
 
 class CartItemSerializer(serializers.ModelSerializer):
-    product = ProductSerializer(read_only=True)
-    product_id = serializers.PrimaryKeyRelatedField(
-        queryset=Product.objects.all(), source='product', write_only=True)
+    product = serializers.PrimaryKeyRelatedField(
+        queryset=Product.objects.all()
+    )    # product_id = serializers.PrimaryKeyRelatedField(
+    #     queryset=Product.objects.all(), source='product', write_only=True)
 
     class Meta:
         model = CartItem
-        fields = ('id', 'product', 'product_id', 'quantity')
+        fields = ('id', 'product', 'quantity')
         extra_kwargs = {'quantity': {'min_value': 1}}
+
+    def create(self, validated_data):
+        cart = self.context['cart']  # we’ll pass this from view
+        product = validated_data['product']
+        quantity = validated_data['quantity']
+
+        cart_item, created = CartItem.objects.get_or_create(
+            cart=cart,
+            product=product,
+            defaults={'quantity': quantity}
+        )
+
+        if not created:
+            cart_item.quantity += quantity
+            cart_item.save()
+
+        return cart_item
+    def to_representation(self, instance):
+        representation = super().to_representation(instance = instance)
+        representation['product'] = ProductSerializer(instance.product).data
+        return representation
 
     def validate(self, attrs):
         product = attrs['product']
@@ -339,8 +362,9 @@ class CartSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Cart
-        fields = ('id', 'user', 'items','total_price')
-        read_only_fields = ('user',)
+        fields = ('id', 'items','total_price')
+        # read_only_fields = ('user',)
+
     def get_total_price(self, obj):
         return obj.total_price()
 
