@@ -54,3 +54,6 @@ class OrderItemAdmin(admin.ModelAdmin):
 
 # اگر می‌خوای داخل صفحه Order بتونی آیتم‌هاش رو مستقیم ویرایش کنی:
 OrderAdmin.inlines = [OrderItemInline]
+
+
+admin.site.register(Payment)

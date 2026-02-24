@@ -1,6 +1,9 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from rest_framework_simplejwt.tokens import RefreshToken
+from django.core.exceptions import ValidationError
+
+from django.contrib.auth.tokens import PasswordResetTokenGenerator
 
 # region Mostafa
 User = get_user_model()
@@ -72,5 +75,60 @@ class LogoutSerializer(serializers.Serializer):
     def save(self, **kwargs):
         token = RefreshToken(self.validated_data["refresh"])
         token.blacklist()
+
+class ChangePasswordSerializer(serializers.Serializer):
+    old_password = serializers.CharField(write_only=True)
+    new_password = serializers.CharField(write_only=True, min_length=8)
+
+    def validate_old_password(self, input_old_password):
+        user = self.context["request"].user
+        if not user.check_password(input_old_password):
+            raise ValidationError("Old password is incorrect!")
+        return input_old_password
+
+    def save(self, **kwargs):
+        user = self.context["request"].user
+        user.set_password(self.validated_data["new_password"])
+        user.save()
+
+
+class PasswordResetRequestSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+
+
+    def save(self):
+        user = User.objects.filter(
+        email=self.validated_data["email"]
+        ).first()
+
+        if user:
+            token = PasswordResetTokenGenerator().make_token(user)
+        # TODO send token via email or whatever later....
+        #     self.context["send_reset"](user, token)
+
+class PasswordResetConfirmSerializer(serializers.Serializer):
+    uid = serializers.IntegerField()
+    token = serializers.CharField()
+    new_password = serializers.CharField(min_length=8)
+
+
+    def validate(self, attrs):
+        user = User.objects.filter(pk=attrs["uid"]).first()
+        if not user:
+            raise serializers.ValidationError("Invalid input, Try anpther time!")
+
+
+        if not PasswordResetTokenGenerator().check_token(user, attrs["token"]):
+            raise serializers.ValidationError("Invalid or expired token")
+
+
+        self.user = user
+        return attrs
+
+
+    def save(self):
+        self.user.set_password(self.validated_data["new_password"])
+        self.user.save()
+
 
 # endregion

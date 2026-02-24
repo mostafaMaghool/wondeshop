@@ -16,6 +16,9 @@ from rest_framework.views import APIView
 from rest_framework.permissions import *
 from rest_framework.generics import GenericAPIView
 from rest_framework_simplejwt.authentication import JWTAuthentication
+from user.permissions import IsSuperOrSiteAdmin
+
+
 
 # Mostafa
 
@@ -39,7 +42,23 @@ class UserDetailAPIView(mixins.RetrieveModelMixin,
 
     def delete(self, request, *args, **kwargs):
         return self.destroy(request, *args, **kwargs)
+    
+    def get_permissions(self):
+            if self.request.method in permissions.SAFE_METHODS:
+                if self.request.user.is_staff:
+                    return [IsSuperOrSiteAdmin()]
+                return [permissions.IsAuthenticated()]
 
+            pk = self.kwargs.get('pk')
+            if str(pk) == str(self.request.user.pk):
+                return [permissions.IsAuthenticated()]
+            return [IsSuperOrSiteAdmin()]
+
+    def get_object(self):
+        obj = super().get_object()
+        self.check_object_permissions(self.request, obj)
+        return obj
+    
 
 class RegisterAPIView(
     mixins.CreateModelMixin,
@@ -87,6 +106,7 @@ def profile_info(request, pk):
         serializer = UserSerializer(user)
     return Response(serializer.data)
 
+
 class UserPanelAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -121,6 +141,44 @@ class UserPanelAPIView(APIView):
             }
         })
     
+class ChangePasswordView(GenericAPIView):
+    serializer_class = ChangePasswordSerializer
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = self.get_serializer(
+            data=request.data,
+            context={"request": request}
+        )
+        serializer.is_valid(raiseExceptions=True)
+        serializer.save()
+        return Response({"detail": "Password changed successfully!"})
+
+
+class PasswordResetRequestView(GenericAPIView):
+    serializer_class = PasswordResetRequestSerializer
+
+    def post(self, request):
+        serializer = self.get_serializer(
+            data=request.data,
+            context={
+                "send_reset": nullcontext  # serializers send email TODO
+            }
+        )
+
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response({"detail": "Check your email, recovery email has been sent"})
+
+class PasswordResetConfirmView(GenericAPIView):
+    serializer_class = PasswordResetConfirmSerializer
+
+
+    def post(self, request):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response({"detail": "Password reset successful"})
 
 
 class LogoutView(GenericAPIView):

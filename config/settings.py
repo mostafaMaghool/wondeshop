@@ -91,6 +91,10 @@ CORS_ALLOW_HEADERS = [
     "x-requested-with",
 ]
 
+NOWPAYMENTS_API_KEY = "0ZPWVZF-SGTMHV2-PK8JSD4-BMPSPZD"
+
+NOWPAYMENTS_WEBHOOK_URL = "http://127.0.0.1:8000/webhook/nowpayments/"
+
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',

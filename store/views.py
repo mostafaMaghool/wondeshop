@@ -18,6 +18,7 @@ from django.db import transaction
 from rest_framework.exceptions import PermissionDenied
 from rest_framework import status
 from rest_framework.decorators import api_view, action
+from decimal import Decimal
 
 from rest_framework import generics, permissions
 
@@ -26,7 +27,7 @@ from rest_framework import generics, permissions
 from store.services.payment_service import create_crypto_payment
 
 class CreatePaymentAPIView(generics.GenericAPIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAuthenticated]
 
     def post(self, request, order_id):
         payment = create_crypto_payment(order_id, request.user)
@@ -42,18 +43,37 @@ class CreatePaymentAPIView(generics.GenericAPIView):
 # store/views/webhook_views.py
 
 class NowPaymentsWebhookAPIView(APIView):
-    permission_classes = [AllowAny]
 
+    permission_classes = [] 
     def post(self, request):
-        payment_id = request.data.get("payment_id")
-        status = request.data.get("payment_status")
+        data = request.data  
 
-        payment = Payment.objects.get(payment_id=payment_id)
-        payment.status = status
-        payment.save()
+        payment_id = data.get("payment_id")
+        status = data.get("payment_status")
+
+        payment = Payment.objects.get(
+            provider_payment_id=payment_id
+        )
+
+        if Decimal(str(data.get("price_amount"))) != payment.amount:
+            return Response({"error": "invalid amount"}, status=400)
+
+        if payment.status == Payment.Status.SUCCESS:
+            return Response({"detail": "already processed"})
 
         if status == "finished":
-            payment.mark_success()
+            payment.status = Payment.Status.SUCCESS
+            payment.save()
+
+            payment.order.status = Order.Status.PAID
+            payment.order.save()
+
+        elif status in ["failed", "expired"]:
+            payment.status = Payment.Status.FAILED
+            payment.save()
+
+            payment.order.status = Order.Status.CANCELLED
+            payment.order.save()
 
         return Response({"detail": "ok"})
 
@@ -239,12 +259,6 @@ class TicketMessageCreateAPIView(APIView):
 
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
-class UserPanelAPIView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request):
-        serializer = UserDashboardSerializer(request.user)
-        return Response(serializer.data)
 
 class ProductPriceUpdateAPIView(APIView):
     permission_classes = [IsAdminUser]
@@ -367,44 +381,6 @@ class OrderItemsGenericDetailView(RetrieveUpdateDestroyAPIView):
         instance.delete()
 
 
-class ChangePasswordView(GenericAPIView):
-    serializer_class = ChangePasswordSerializer
-    permission_classes = [AllowAny]
-
-    def post(self, request):
-        serializer = self.get_serializer(
-            data=request.data,
-            context={"request": request}
-        )
-        serializer.is_valid(raiseExceptions=True)
-        serializer.save()
-        return Response({"detail": "Password changed successfully!"})
-
-
-class PasswordResetRequestView(GenericAPIView):
-    serializer_class = PasswordResetRequestSerializer
-
-    def post(self, request):
-        serializer = self.get_serializer(
-            data=request.data,
-            context={
-                "send_reset": nullcontext  # serializers send email TODO
-            }
-        )
-
-        serializer.is_valid(raise_exception=True)
-        serializer.save()
-        return Response({"detail": "Check your email, recovery email has been sent"})
-
-class PasswordResetConfirmView(GenericAPIView):
-    serializer_class = PasswordResetConfirmSerializer
-
-
-    def post(self, request):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        serializer.save()
-        return Response({"detail": "Password reset successful"})
 
 #endregion
     
@@ -415,18 +391,82 @@ class IsOwnerMixin:
         return super().get_queryset().filter(user=self.request.user)
 
 
+# region Mostafa
 class CartViewSet(viewsets.ModelViewSet):
-    queryset = Cart.objects.all()
     serializer_class = CartSerializer
-    permission_classes = [AllowAny]
-class CartItemViewSet(viewsets.ModelViewSet):
-    serializer_class = CartItemSerializer
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
 
     def get_queryset(self):
-        user = self.request.user
+        return Cart.objects.filter(user=self.request.user)
+
+    def create(self, request, *args, **kwargs):
+        """
+        POST /cart/  ← این همون چیزیه که فرانتت داره می‌زنه
+        حالا به معنای "اضافه کردن به کارت" تفسیر میشه
+        """
+        # استفاده از همان serializer آیتم
+        item_serializer = CartItemSerializer(
+            data=request.data,
+            context={'request': request}
+        )
+        item_serializer.is_valid(raise_exception=True)
+
+        # ساخت/گرفتن کارت کاربر
+        cart, _ = Cart.objects.get_or_create(user=request.user)
+
+        if cart.is_locked:
+            raise serializers.ValidationError(
+                {"detail": "The cart is locked and cannot be modified."}
+            )
+
+        product = item_serializer.validated_data['product']
+        quantity_to_add = item_serializer.validated_data.get('quantity', 1)
+
+        # چک موجودی برای مجموع نهایی
+        existing_item = CartItem.objects.filter(cart=cart, product=product).first()
+        current_qty = existing_item.quantity if existing_item else 0
+
+        if product.stock < current_qty + quantity_to_add:
+            raise serializers.ValidationError(
+                {"detail": f"Not enough stock for {product.name}"}
+            )
+
+        if existing_item:
+            # افزایش مقدار (همین چیزی که می‌خوای برای "اضافه")
+            existing_item.quantity += quantity_to_add
+            existing_item.save()
+            item = existing_item
+        else:
+            # ایجاد جدید
+            item_serializer.save(cart=cart)
+            item = item_serializer.instance
+
+        # برگرداندن کل کارت (با items و total_price) — فرانت راحت رفرش می‌کنه
+        cart_serializer = self.get_serializer(cart)
+        return Response(cart_serializer.data, status=status.HTTP_201_CREATED)
+
+    # لیست هم فقط کارت کاربر رو برمی‌گردونه (تک آبجکت)
+    def list(self, request, *args, **kwargs):
+        queryset = self.get_queryset()
+        if queryset.exists():
+            serializer = self.get_serializer(queryset.first())
+            return Response(serializer.data)
+        return Response({
+            "id": None,
+            "items": [],
+            "total_price": 0
+        })
+
+
+class CartItemViewSet(viewsets.ModelViewSet):
+    serializer_class = CartItemSerializer
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get_queryset(self):
         try:
-            cart = Cart.objects.get(user=user)
+            cart = Cart.objects.get(user=self.request.user)
             return cart.items.all()
         except Cart.DoesNotExist:
             return CartItem.objects.none()

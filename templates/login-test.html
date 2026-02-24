@@ -83,14 +83,16 @@ button{ padding:8px 14px; border:none; border-radius:4px; cursor:pointer; }
 </div>
 
 <script>
+// ثابت‌ها را درست کن
 const API = {
-  login:"http://127.0.0.1:8000/login/",
-  register:"http://127.0.0.1:8000/register/",
-  logout:"http://127.0.0.1:8000/logout/",
-  profile:"http://127.0.0.1:8000/profile/",
-  products:"http://127.0.0.1:8000/products/",
-  cart: "http://127.0.0.1:8000/cart/"};
-
+  login:     "http://127.0.0.1:8000/login/",
+  register:  "http://127.0.0.1:8000/register/",
+  logout:    "http://127.0.0.1:8000/logout/",
+  profile:   "http://127.0.0.1:8000/profile/",
+  products:  "http://127.0.0.1:8000/products/",
+  cart:      "http://127.0.0.1:8000/cart/",           // GET لیست / کارت کاربر
+  cart_items:"http://127.0.0.1:8000/cart/items/",     // ← جدید – برای POST و DELETE
+};
 let products = [];
 let cart = [];
 
@@ -262,11 +264,15 @@ function renderCart(){
   });
   document.getElementById('total').textContent = "مجموع: " + total + "$";
 }
-async function addToCart(productId, quantity = 1) {
+
+async function addToCart(productIndex, quantity = 1) {
+  const product = products[productIndex];
+  if (!product) return alert("محصول نامعتبر");
+
   const csrftoken = getCookie("csrftoken");
 
   try {
-    const res = await fetch(API.cart, {
+    const res = await fetch(API.cart_items, {   // ← اینجا تغییر مهم
       method: "POST",
       credentials: "include",
       headers: {
@@ -274,34 +280,47 @@ async function addToCart(productId, quantity = 1) {
         "X-CSRFToken": csrftoken
       },
       body: JSON.stringify({
-        product_id: productId,
+        product_id: product.id,               // ← id واقعی محصول (نه ایندکس)
         quantity: quantity
       })
     });
 
-    const data = await res.json();
-
     if (!res.ok) {
-      alert("خطا در افزودن به سبد خرید");
-      console.log(data);
+      const err = await res.json();
+      console.error("خطا:", err);
+      alert("خطا: " + (err.detail || err.product?.[0] || "مشکل ناشناخته"));
       return;
     }
 
-    alert("محصول به سبد خرید اضافه شد ✅");
+    alert("محصول اضافه شد ✓");
+    await loadCart();          // رفرش سبد
+
   } catch (err) {
     console.error(err);
-    alert("خطا در اتصال به سرور");
+    alert("خطا در ارتباط با سرور");
   }
 }
 
+// تابع removeFromCart هم باید مسیر درست را بزند
 async function removeFromCart(index){
   const item = cart[index];
-  if(!item?.id){ alert('id آیتم سبد وجود ندارد'); return;}
+  if(!item?.id) return alert('آیتم معتبر نیست');
+
   try{
-    const res = await fetch(API.cart+item.id+'/',{method:'DELETE',credentials:'include'});
-    if(!res.ok) throw new Error();
+    const res = await fetch(`${API.cart_items}${item.id}/`, {   // ← تغییر مهم
+      method: 'DELETE',
+      credentials: 'include',
+      headers: {
+        "X-CSRFToken": getCookie("csrftoken")
+      }
+    });
+
+    if (!res.ok) throw new Error();
     await loadCart();
-  }catch{ alert('خطا در حذف');}
+  }catch(err){
+    console.error(err);
+    alert('خطا در حذف آیتم');
+  }
 }
 
 // ================= LOGOUT =================

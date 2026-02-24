@@ -6,10 +6,8 @@ from rest_framework.routers import DefaultRouter
 from django.conf import settings
 from django.conf.urls.static import static
 
-
 from store.views import CreatePaymentAPIView
 from store.views import NowPaymentsWebhookAPIView
-
 
 router = DefaultRouter()
 router.register('products', views.ProductView, basename='products')
@@ -29,10 +27,6 @@ urlpatterns = [
     path('orders/<int:pk>', views.OrdersGenericDetailView.as_view()),
     path('orderItems/', views.OrderItemsGenericApiView.as_view()),
     path('orderItems/<int:pk>', views.OrderItemsGenericDetailView.as_view()),
-    path('change-password/', views.ChangePasswordView.as_view(), name='change_password'),
-    path('password-reset/request/', views.PasswordResetRequestView.as_view(), name='password_reset_request'),
-    path('password-reset/confirm/', views.PasswordResetConfirmView.as_view(), name='password_reset_confirm'),
-    path('user/panel/', UserPanelAPIView.as_view(), name='user-panel'),
     path('products/<int:pk>/price/', views.ProductPriceUpdateAPIView.as_view()),
     path('products/<int:pk>/price-history/', views.ProductPriceHistoryAPIView.as_view())
 ]
