@@ -1,5 +1,5 @@
 from django.conf import settings
-from django.core.validators import MinLengthValidator
+from django.core.validators import MinLengthValidator, MinValueValidator
 from django.db import models, transaction
 from django.utils import timezone
 from django.utils.text import slugify
@@ -338,34 +338,79 @@ class Address(models.Model):
         return f'{self.title} - {self.city}, {self.country}'
     
 class Cart(models.Model):
+    class Status(models.TextChoices):
+        OPEN = "open"
+        LOCKED = "locked"
+        COMPLETED = "completed"
+
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.OPEN
+    )
+
+    @property
+    def is_locked(self):
+        return self.status != self.Status.OPEN
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
     user = models.OneToOneField(settings.AUTH_USER_MODEL,
                                 on_delete=models.CASCADE,
                                 related_name='cart')
-    created_at = models.DateTimeField(auto_now_add=True)
+    class Meta:
+        ordering = ["-created_at"]
 
-    def is_locked(self):
-        return Order.objects.filter(
-            user=self.user,
-            status=Order.Status.PAID,
-        ).exists()
-
+    @property
     def total_price(self):
         return sum(
-            item.quantity * item.product.price
-            for item in self.items.all()
+            item.product.price * item.quantity
+            for item in self.items.select_related("product")
         )
+
     def __str__(self):
-        return f'Cart({self.user.username})'
+        return f"Cart({self.user.username})"
+
     
 class CartItem(models.Model):
-    cart = models.ForeignKey(Cart, on_delete=models.CASCADE,
-                             related_name='items')
-    product = models.ForeignKey('Product', on_delete=models.PROTECT)
-    quantity = models.PositiveIntegerField()
+
+    cart = models.ForeignKey(
+        Cart,
+        on_delete=models.CASCADE,
+        related_name='items'
+    )
+
+    product = models.ForeignKey(
+        Product,
+        on_delete=models.CASCADE, #correct for cart, but not for OrderItem!
+        related_name="cart_items"
+    )
+
+    quantity = models.PositiveIntegerField(
+        validators=[MinValueValidator(1)]
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    # price = models.DecimalField(
+    #     max_digits=12,
+    #     decimal_places=2
+    # )
 
     class Meta:
-        unique_together = ('cart', 'product')
+        constraints = [
+            models.UniqueConstraint(
+                fields=["cart", "product"],
+                name="unique_cart_product"
+            )
+        ]
+        ordering = ['-created_at']
+
+    @property
+    def subtotal(self):
+        return self.quantity * self.product.price
 
     def __str__(self):
-        return f'{self.product.name} x {self.quantity}'
+        return f"{self.product.name} x {self.quantity}"
 #endregion

@@ -435,43 +435,35 @@ class PaymentCallbackAPIView(APIView):
 class CartItemViewSet(viewsets.ModelViewSet):
     serializer_class = CartItemSerializer
     permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
 
     def get_queryset(self):
-        user = self.request.user
         try:
-            cart = Cart.objects.get(user=user)
-            return cart.items.all()
+            return Cart.objects.filter(cart__user=self.request.user)
         except Cart.DoesNotExist:
             return CartItem.objects.none()
 
     def get_serializer_context(self):
         context = super().get_serializer_context()
         cart, created = Cart.objects.get_or_create(user=self.request.user)
-        context['cart'] = cart
+        context["cart"] = cart
         return context
 
+    @transaction.atomic
     def perform_create(self, serializer):
         if self.get_serializer_context()['cart'].is_locked():
             raise PermissionDenied("Cart is locked after payment,"
-                                   " cannot add any item")
+                                   "cannot add any item!")
         serializer.save()
 
     def perform_update(self, serializer):
-        cart = Cart.objects.get(user=self.request.user)
-
-        if cart.is_locked():
-            raise PermissionDenied("Cart is locked after payment,"
-                                   " cannot update any item")
-
-        serializer.save(cart=cart)
+        if serializer.instance.cart.is_locked:
+            raise serializers.ValidationError("The cart is locked and cannot be modified.")
+        serializer.save()
 
     def perform_destroy(self, instance):
-        cart = Cart.objects.get(user=self.request.user)
-
-        if cart.is_locked():
-            raise PermissionDenied("Cart is locked after payment,"
-                                   " cannot remove any item")
-
+        if instance.cart.is_locked:
+            raise serializers.ValidationError("The cart is locked and cannot be modified.")
         instance.delete()
 
 

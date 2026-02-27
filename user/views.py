@@ -1,19 +1,18 @@
-from rest_framework import generics, permissions, mixins
-from .serializers import *
-from drf_spectacular.utils import extend_schema
-from store.serializers import *
-from rest_framework_simplejwt.views import TokenObtainPairView
-from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
-from rest_framework.response import Response
-from rest_framework.decorators import api_view
-from .models import *
-from store.models import *
 from django.shortcuts import get_object_or_404
-from rest_framework import status
-from django.db.models.signals import post_save
-from django.dispatch import receiver
-from rest_framework.views import APIView
+from drf_spectacular.utils import extend_schema
+from rest_framework import generics, permissions, mixins
+from rest_framework.decorators import api_view
 from rest_framework.permissions import *
+from rest_framework.response import Response
+from rest_framework.views import APIView
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from rest_framework_simplejwt.views import TokenObtainPairView
+
+from store.models import *
+from store.serializers import *
+from .models import *
+from .serializers import *
+
 
 # Mostafa
 

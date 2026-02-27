@@ -318,32 +318,33 @@ class TicketSerializer(serializers.ModelSerializer):
 # ======================================================
 
 class CartItemSerializer(serializers.ModelSerializer):
+    # product = ProductSerializer(read_only=True)
     product = serializers.PrimaryKeyRelatedField(
-        queryset=Product.objects.all()
-    )    # product_id = serializers.PrimaryKeyRelatedField(
-    #     queryset=Product.objects.all(), source='product', write_only=True)
+        queryset=Product.objects.all())
 
     class Meta:
         model = CartItem
         fields = ('id', 'product', 'quantity')
         extra_kwargs = {'quantity': {'min_value': 1}}
 
+    @transaction.atomic
     def create(self, validated_data):
-        cart = self.context['cart']  # we’ll pass this from view
-        product = validated_data['product']
-        quantity = validated_data['quantity']
+        cart = self.context["cart"]
+        product = validated_data["product"]
+        quantity = validated_data["quantity"]
 
-        cart_item, created = CartItem.objects.get_or_create(
+        item, created = CartItem.objects.get_or_create(
             cart=cart,
             product=product,
-            defaults={'quantity': quantity}
+            defaults={"quantity": quantity},
         )
 
         if not created:
-            cart_item.quantity += quantity
-            cart_item.save()
+            item.quantity += quantity
+            item.save()
 
-        return cart_item
+        return item
+
     def to_representation(self, instance):
         representation = super().to_representation(instance = instance)
         representation['product'] = ProductSerializer(instance.product).data
